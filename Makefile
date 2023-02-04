@@ -6,7 +6,7 @@ all:	rc2014 rcbus-1802 rcbus-6303 rcbus-6502 rcbus-65c816-mini \
 	rcbus-80c188 rcbus-8085 rcbus-z8 rcbus-z180 rbcv2 searle linc80 \
 	makedisk markiv mbc2 smallz80 sbc2g z80mc simple80 flexbox tiny68k \
 	s100-z80 scelbi rb-mbc rcbus-tms9995 rhyophyre pz1 68knano \
-	littleboard mini68k
+	littleboard mini68k kiss68030
 
 sdl2:	rc2014_sdl2 nc100 nc200 n8_sdl2 scelbi_sdl2 nascom uk101 z180-mini-itx_sdl2 vz300
 
@@ -64,12 +64,10 @@ rcbus-65c816-mini: rcbus-65c816-mini.o ide.o 6522.o rtc_bitbang.o acia.o 16x50.o
 lib65c816/src/lib65816.a:
 	$(MAKE) --directory lib65c816 -j 1
 
-lib65816/config.h: lib65c816/src/lib65816.a
-
-rcbus-65c816.o: rcbus-65c816-mini.c lib65816/config.h
+rcbus-65c816.o: rcbus-65c816-mini.c lib65c816/src/lib65816.a
 	$(CC) $(CFLAGS) -Ilib65c816 -c rcbus-65c816.c
 
-rcbus-65c816-mini.o: rcbus-65c816-mini.c lib65816/config.h
+rcbus-65c816-mini.o: rcbus-65c816-mini.c lib65c816/src/lib65816.a
 	$(CC) $(CFLAGS) -Ilib65c816 -c rcbus-65c816-mini.c
 
 rcbus-6800: rcbus-6800.o 6800.o ide.o acia.o 16x50.o
@@ -134,8 +132,14 @@ tiny68k.o: tiny68k.c m68k/lib68k.a
 mini68k: mini68k.o ide.o ppide.o 16x50.o rtc_bitbang.o sdcard.o m68k/lib68k.a lib765/lib/lib765.a
 	cc -g3 mini68k.o ide.o ppide.o 16x50.o rtc_bitbang.o sdcard.o m68k/lib68k.a lib765/lib/lib765.a -o mini68k
 
+kiss68030: kiss68030.o ide.o ppide.o 16x50.o rtc_bitbang.o sdcard.o m68k/lib68k.a lib765/lib/lib765.a
+	cc -g3 kiss68030.o ide.o ppide.o 16x50.o rtc_bitbang.o sdcard.o m68k/lib68k.a lib765/lib/lib765.a -o kiss68030
+
 mini68k.o: mini68k.c m68k/lib68k.a
 	$(CC) $(CFLAGS) -Im68k -c mini68k.c
+
+kiss68030.o: kiss68030.c m68k/lib68k.a
+	$(CC) $(CFLAGS) -O2 -Im68k -c kiss68030.c
 
 z80mc:	z80mc.o sdcard.o libz80/libz80.o
 	cc -g3 z80mc.o sdcard.o libz80/libz80.o -o z80mc
