@@ -846,7 +846,7 @@ static void make_serial(uint16_t *p)
   make_ascii(p, buf, 20);
 }
 
-int ide_make_drive(uint8_t type, int fd)
+int ide_make_drive(uint8_t type, int fd, int sparse_file)
 {
   uint8_t s, h;
   uint16_t c;
@@ -920,6 +920,14 @@ int ide_make_drive(uint8_t type, int fd)
       make_ascii(ident + 23, "A001.001", 8);
       make_ascii(ident + 27, "ACME ZIPPIBUS v0.1", 40);
       break;
+    case ACME_BIGGUS_DISKUS:
+      c = 8192;
+      h = 16;
+      s = 128;
+      ident[49] = le16(1 << 9); /* LBA */
+      make_ascii(ident + 23, "A001.001", 8);
+      make_ascii(ident + 27, "ACME BIGGUS DISKUS v0.1", 40);
+      break;
   }
   ident[1] = le16(c);
   ident[3] = le16(h);
@@ -935,9 +943,17 @@ int ide_make_drive(uint8_t type, int fd)
   if (write(fd, ident, 512) != 512)
     return -1;
 
-  memset(ident, 0xE5, 512);
+  if(sparse_file) {
+      if(lseek(fd, (off_t)(sectors-1) * (off_t)512, SEEK_CUR) == (off_t)-1)
+          return -1;
+      sectors = 1; /* write final sector only */
+  }
+
+  memset(ident, sparse_file ? 0x00 : 0xE5, 512);
+
   while(sectors--)
-    if (write(fd, ident, 512) != 512)
-      return -1;
+      if (write(fd, ident, 512) != 512)
+          return -1;
+
   return 0;
 }
