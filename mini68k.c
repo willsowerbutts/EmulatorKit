@@ -947,6 +947,7 @@ static void device_init(void)
 	ppide_reset(ppide);
 	uart16x50_reset(uart);
 	uart16x50_set_input(uart, 1);
+	uart16x50_signal_event(uart, 0x10); /* mini68K ROM wants the CTS bit asserted */
 	u27 = 0;
 }
 
@@ -1005,6 +1006,16 @@ void cpu_set_fc(int fc)
 void usage(void)
 {
 	fprintf(stderr, "mini68k: [-0][-1][-2][-e][-m memsize][-r rompath][-i idepath][-I idepath] [-d debug].\n");
+	fprintf(stderr, "memsize is in kbytes\n");
+	fprintf(stderr, "debug is a bitwise OR combination of the following:\n");
+	fprintf(stderr, "%5d   MEM\n",	 TRACE_MEM);
+	fprintf(stderr, "%5d   CPU\n",	 TRACE_CPU);
+	fprintf(stderr, "%5d   UART\n",  TRACE_UART);
+	fprintf(stderr, "%5d   PPIDE\n", TRACE_PPIDE);
+	fprintf(stderr, "%5d   RTC\n",	 TRACE_RTC);
+	fprintf(stderr, "%5d   FDC\n",	 TRACE_FDC);
+	fprintf(stderr, "%5d   NS202\n", TRACE_NS202);
+	fprintf(stderr, "%5d   SD\n",	 TRACE_SD);
 	exit(1);
 }
 
