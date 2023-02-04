@@ -1,5 +1,5 @@
-MUSASHIFILES     = m68kcpu.c m68kdasm.c
-MUSASHIGENCFILES = m68kops.c m68kopac.c m68kopdm.c m68kopnz.c
+MUSASHIFILES     = m68kcpu.c m68kdasm.c softfloat/softfloat.c
+MUSASHIGENCFILES = m68kops.c
 MUSASHIGENHFILES = m68kops.h
 MUSASHIGENERATOR = m68kmake
 
@@ -10,11 +10,11 @@ MUSASHIGENERATOR = m68kmake
 .OFILEST   = $(.CFILEST:%.c=%.o)
 
 CC        = gcc -O2
-WARNINGS  = -Wall -pedantic -Werror
+WARNINGS  = -Wall -Wextra -pedantic -Werror
 CFLAGS    = $(WARNINGS)
 LFLAGS    = $(WARNINGS)
 
-TAGRET	  = lib68k.a
+TARGET	  = lib68k.a
 
 DELETEFILES = $(MUSASHIGENCFILES) $(MUSASHIGENHFILES) $(.OFILES) $(.OFILEST) $(TARGET) $(MUSASHIGENERATOR) *~
 
