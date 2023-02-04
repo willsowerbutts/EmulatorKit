@@ -1,4 +1,8 @@
 /*
+ * 2023-02-04 Will Sowerbutts <will@sowerbutts.com>
+ *
+ * Based on Alan Cox's mini68k.c
+ *
  *	John Coffman's
  *	RBC KISS-68030 + MF/PIC board with PPIDE
  *
@@ -28,11 +32,8 @@
  *	0x08	DualSD
  *
  *	TODO
- *	- make take_a_nap smarter
- *	- optimised cpu_read_long/cpu_write_long?
- *	- ns202 priority logic (esp rotating)
- *	- Finish the ns202 register model
- *	- DualSD second card
+ *	- make take_a_nap smarter (measure wall clock time elapsed)
+ *	- share ns202 and other mf/pic code with mini68k?
  */
 
 #include <stdio.h>
@@ -49,12 +50,14 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <m68k.h>
+#include <endian.h>
 #include "16x50.h"
 #include "ppide.h"
 #include "rtc_bitbang.h"
 #include "sdcard.h"
 #include "lib765/include/765.h"
 
+#define NVRAM_FILENAME "kiss68030.nvram"
 
 /* IDE controller */
 static struct ppide *ppide;	/* MFPIC */
@@ -77,7 +80,8 @@ static FDRV_PTR drive_a, drive_b;
 /* up to 256MB DRAM */
 #define MAXDRAMMB 256
 static uint8_t ram[MAXDRAMMB << 20];
-static unsigned memsize;
+static uint32_t memsize;
+static uint32_t fast_memsize = 0; /* this is 0 until u304 is 0xFF, then it is equal to memsize */
 
 /* 32KB SRAM */
 static uint8_t sram[32 << 10];
@@ -86,8 +90,6 @@ static uint8_t sram[32 << 10];
 #define ROMSIZE (512 << 10)
 static uint8_t rom[ROMSIZE];
 
-/* Force ROM into low space for the first 8 reads */
-static uint8_t u304;
 /* Config register on the MFPIC */
 static uint8_t mfpic_cfg;
 
@@ -104,7 +106,27 @@ static int trace = 0;
 
 uint8_t fc;
 
-#define NVRAM_FILENAME "kiss68030.nvram"
+/* Force ROM into low space for the first 8 reads */
+static uint8_t u304 = 0;
+
+/* U304 on the KISS-68030 is an 8-bit shift register that starts
+ * as all 0s and fills with 1s from the LSB. All memory access is
+ * directed to ROM while the MSB is 0. */
+void u304_reset(void)
+{
+    u304 = 0;
+    fast_memsize = 0;
+}
+
+void u304_clk(void)
+{
+    if(u304 == 0xFF)
+        return;
+    u304 = (u304 << 1) | 1;
+    if(u304 == 0xFF){ /* finished: safe to enable fast 32-bit RAM access */
+        fast_memsize = memsize;
+    }
+}
 
 unsigned int check_chario(void)
 {
@@ -758,26 +780,20 @@ void uart16x50_signal_change(struct uart16x50 *uart, uint8_t mcr)
 /* Read data from RAM, ROM, or a device */
 unsigned int do_cpu_read_byte(unsigned int address, unsigned debug)
 {
-	if (!(u304 & 0x80)) {
-		if (debug == 0) {
-			u304 <<= 1;
-			u304 |= 1; 
-		}
-		return rom[address & (ROMSIZE-1)];
-	}
-	if (debug == 0) {
-		u304 <<= 1;
-		u304 |= 1;
-	}
+        if (!(u304 & 0x80)) {
+            if (debug == 0) {
+                u304_clk();
+            }
+            return rom[address & (ROMSIZE-1)];
+        }
+        if (debug == 0) {
+            u304_clk();
+        }
 
+        if (address < memsize)
+            return ram[address];
         /* WRS: I seem to recall the real hardware raises an exception on reads
          * outside of the physically installed RAM. Not sure how to model this yet */
-	if (address < 0x10000000) { /* DRAM */
-		if (address < memsize)
-			return ram[address];
-		else
-			return 0xFF;
-	}
 	if (address < 0xFFF00000) /* unmapped: WRS: should raise an exception here? */
 		return 0xFF;
 	if (address < 0xFFF80000) /* ROM! Everyone loves ROM */
@@ -857,8 +873,12 @@ unsigned int cpu_read_word_dasm(unsigned int address)
 
 unsigned int cpu_read_long(unsigned int address)
 {
-    /* WRS: could do fast 32-bit ROM/RAM reads and punt the rest to do_cpu_read_byte? */
+    /* fast path for 32-bit RAM */
+    if(address < fast_memsize) {
+        return be32toh(((uint32_t*)ram)[address >> 2]);
+    } else {
 	return (cpu_read_word(address) << 16) | cpu_read_word(address + 2);
+    }
 }
 
 unsigned int cpu_read_long_dasm(unsigned int address)
@@ -869,12 +889,10 @@ unsigned int cpu_read_long_dasm(unsigned int address)
 void cpu_write_byte(unsigned int address, unsigned int value)
 {
 	if (!(u304 & 0x80)) {
-		u304 <<= 1;
-		u304 |= 1;
-		return;
+            u304_clk();
+            return;
 	}
-	u304 <<= 1;
-	u304 |= 1;
+        u304_clk();
 
 	if (address < memsize) {
 		ram[address] = value;
@@ -954,8 +972,13 @@ void cpu_write_word(unsigned int address, unsigned int value)
 
 void cpu_write_long(unsigned int address, unsigned int value)
 {
+    /* fast path for 32-bit RAM */
+    if(address < fast_memsize) {
+        ((uint32_t*)ram)[address >> 2] = htobe32(value);
+    } else {
 	cpu_write_word(address, value >> 16);
 	cpu_write_word(address + 2, value & 0xFFFF);
+    }
 }
 
 void cpu_write_pd(unsigned int address, unsigned int value)
@@ -981,7 +1004,7 @@ static void device_init(void)
 	uart16x50_reset(uart);
 	uart16x50_set_input(uart, 1);
 	uart16x50_signal_event(uart, 0x10); /* mini68K ROM wants the CTS bit asserted */
-	u304 = 0;
+        u304_reset();
 }
 
 static struct termios saved_term, term;
