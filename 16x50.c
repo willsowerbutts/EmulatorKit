@@ -238,6 +238,14 @@ uint8_t uart16x50_read(struct uart16x50 *uptr, uint8_t addr)
         /* Reading clears the delta bits */
         uptr->msr &= 0xF0;
         uart16x50_clear_interrupt(uptr, MODEM);
+        if (uptr->mcr & 16){
+            /* loopback mode: loop back the modem control signals */
+            r &= 0x0F;
+            if(uptr->mcr & 1) r |= 0x20; /* DTR controls DSR */
+            if(uptr->mcr & 2) r |= 0x10; /* RTS controls CTS */
+            if(uptr->mcr & 4) r |= 0x40; /* OUT1 controls RI */
+            if(uptr->mcr & 8) r |= 0x80; /* OUT2 controls DCD */
+        }
         return r;
     case 7:
         return uptr->scratch;
