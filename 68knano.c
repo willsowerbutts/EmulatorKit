@@ -18,10 +18,13 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <m68k.h>
+#include <m68kcpu.h>
 #include "16x50.h"
 #include "ds3234.h"
 #include "ide.h"
 
+/* CPU */
+extern m68ki_cpu_core m68ki_cpu;
 /* IDE controller */
 static struct ide_controller *ide;
 /* Serial */
@@ -442,8 +445,8 @@ int main(int argc, char *argv[])
 	ds3234_trace(ds3234, trace & TRACE_RTC);
 
 	m68k_init();
-	m68k_set_cpu_type(cputype);
-	m68k_pulse_reset();
+	m68k_set_cpu_type(&m68ki_cpu, cputype);
+	m68k_pulse_reset(&m68ki_cpu);
 
 	/* Init devices */
 	device_init();
@@ -455,7 +458,7 @@ int main(int argc, char *argv[])
 			   second. We do a blind 0.01 second sleep so we are actually
 			   emulating a bit under 12Mhz - which will do fine for
 			   testing this stuff */
-			m68k_execute(1200);
+			m68k_execute(&m68ki_cpu, 1200);
 			uart16x50_event(uart);
 			recalc_interrupts();
 			if (!fast)

@@ -50,6 +50,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <m68k.h>
+#include <m68kcpu.h>
 #include <endian.h>
 #include "16x50.h"
 #include "ppide.h"
@@ -58,6 +59,9 @@
 #include "lib765/include/765.h"
 
 #define NVRAM_FILENAME "kiss68030.nvram"
+
+/* CPU */
+extern m68ki_cpu_core m68ki_cpu;
 
 /* IDE controller */
 static struct ppide *ppide;	/* MFPIC */
@@ -780,199 +784,217 @@ void uart16x50_signal_change(struct uart16x50 *uart, uint8_t mcr)
 /* Read data from RAM, ROM, or a device */
 unsigned int do_cpu_read_byte(unsigned int address, unsigned debug)
 {
-        if (!(u304 & 0x80)) {
-            if (debug == 0) {
-                u304_clk();
-            }
-            return rom[address & (ROMSIZE-1)];
-        }
+    if (!(u304 & 0x80)) {
         if (debug == 0) {
             u304_clk();
         }
+        return rom[address & (ROMSIZE-1)];
+    }
+    if (debug == 0) {
+        u304_clk();
+    }
 
-        if (address < memsize)
-            return ram[address];
-        /* WRS: I seem to recall the real hardware raises an exception on reads
-         * outside of the physically installed RAM. Not sure how to model this yet */
-	if (address < 0xFFF00000) /* unmapped: WRS: should raise an exception here? */
-		return 0xFF;
-	if (address < 0xFFF80000) /* ROM! Everyone loves ROM */
-		return rom[address & (ROMSIZE-1)];
-        if (address < 0xFFFE0000) /* ECB memory: not implemented */
-                return 0xFF;
-        if (address < 0xFFFF0000) /* SRAM - 32KB mapped twice */
-                return sram[address & 0x7FFF];
+    if (address < memsize)
+        return ram[address];
+    /* WRS: I seem to recall the real hardware raises an exception on reads
+     * outside of the physically installed RAM. Not sure how to model this yet */
+    if (address < 0xFFF00000) /* unmapped: WRS: should raise an exception here? */
+        return 0xFF;
+    if (address < 0xFFF80000) /* ROM! Everyone loves ROM */
+        return rom[address & (ROMSIZE-1)];
+    if (address < 0xFFFE0000) /* ECB memory: not implemented */
+        return 0xFF;
+    if (address < 0xFFFF0000) /* SRAM - 32KB mapped twice */
+        return sram[address & 0x7FFF];
 
-	/* I/O space */
-	/* Disassembler doesn't trigger I/O side effects */
-	if (debug)
-		return 0xFF;
+    /* I/O space */
+    /* Disassembler doesn't trigger I/O side effects */
+    if (debug)
+        return 0xFF;
 
-	address &= 0xFFFF;
+    address &= 0xFFFF;
 
-        /* forced trace */
-        // fprintf(stderr, "[IO: read addr %04x]\n", address);
+    /* forced trace */
+    // fprintf(stderr, "[IO: read addr %04x]\n", address);
 
-	if ((address & 0xF0) == 0x20)
-		return ppide_read(ppide2, address & 0x03);
-	if ((address & 0xF0) == 0x30)
-		return fdc_read(address);
-	switch(address & 0xFF) {
-	case 0x08:
-	case 0x09:
-		return dualsd_read(address);
-	case 0x40:
-		return ns202_read(address);
-	case 0x42:
-		return cfg_read();
-	case 0x43:
-		return rtc_remap_r(rtc_read(rtc));
-	case 0x44:
-	case 0x45:
-	case 0x46:
-	case 0x47:
-		return ppide_read(ppide, address & 0x03);
-	case 0x48:
-	case 0x49:
-	case 0x4A:
-	case 0x4B:
-	case 0x4C:
-	case 0x4D:
-	case 0x4E:
-	case 0x4F:
-		return uart16x50_read(uart, address & 0x07);
-	}
-	return 0xFF;
+    if ((address & 0xF0) == 0x20)
+        return ppide_read(ppide2, address & 0x03);
+    if ((address & 0xF0) == 0x30)
+        return fdc_read(address);
+    switch(address & 0xFF) {
+        case 0x08:
+        case 0x09:
+            return dualsd_read(address);
+        case 0x40:
+            return ns202_read(address);
+        case 0x42:
+            return cfg_read();
+        case 0x43:
+            return rtc_remap_r(rtc_read(rtc));
+        case 0x44:
+        case 0x45:
+        case 0x46:
+        case 0x47:
+            return ppide_read(ppide, address & 0x03);
+        case 0x48:
+        case 0x49:
+        case 0x4A:
+        case 0x4B:
+        case 0x4C:
+        case 0x4D:
+        case 0x4E:
+        case 0x4F:
+            return uart16x50_read(uart, address & 0x07);
+    }
+    return 0xFF;
 }
 
 unsigned int cpu_read_byte(unsigned int address)
 {
-	unsigned int v = do_cpu_read_byte(address, 0);
-	if (trace & TRACE_MEM)
-		fprintf(stderr, "RB %08X -> %02X\n", address, v);
-	return v;
+    unsigned int v;
+    if(address < fast_memsize)
+        v = ram[address];
+    else
+        v = do_cpu_read_byte(address, 0);
+    if (trace & TRACE_MEM)
+        fprintf(stderr, "RB %08X -> %02X\n", address, v);
+    return v;
 }
 
 unsigned int do_cpu_read_word(unsigned int address, unsigned int debug)
 {
-	return (do_cpu_read_byte(address, debug) << 8) | do_cpu_read_byte(address + 1, debug);
+    return (do_cpu_read_byte(address, debug) << 8) | do_cpu_read_byte(address + 1, debug);
 }
 
 unsigned int cpu_read_word(unsigned int address)
 {
-	unsigned int v = do_cpu_read_word(address, 0);
-	if (trace & TRACE_MEM)
-		fprintf(stderr, "RW %08X -> %04X\n", address, v);
-	return v;
+    unsigned int v;
+    if(address < fast_memsize)
+        v = be16toh(((uint16_t*)ram)[address >> 1]);
+    else
+        v = do_cpu_read_word(address, 0);
+    if (trace & TRACE_MEM)
+        fprintf(stderr, "RW %08X -> %04X\n", address, v);
+    return v;
 }
 
 unsigned int cpu_read_word_dasm(unsigned int address)
 {
-	return do_cpu_read_word(address, 1);
+    return do_cpu_read_word(address, 1);
 }
 
 unsigned int cpu_read_long(unsigned int address)
 {
-    /* fast path for 32-bit RAM */
-    if(address < fast_memsize) {
-        return be32toh(((uint32_t*)ram)[address >> 2]);
-    } else {
-	return (cpu_read_word(address) << 16) | cpu_read_word(address + 2);
-    }
+    unsigned int v;
+    if(address < fast_memsize)
+        v = be32toh(((uint32_t*)ram)[address >> 2]);
+    else
+        v = (cpu_read_word(address) << 16) | cpu_read_word(address + 2);
+    if (trace & TRACE_MEM)
+        fprintf(stderr, "RW %08X -> %08X\n", address, v);
+    return v;
 }
 
 unsigned int cpu_read_long_dasm(unsigned int address)
 {
-	return (cpu_read_word_dasm(address) << 16) | cpu_read_word_dasm(address + 2);
+    return (cpu_read_word_dasm(address) << 16) | cpu_read_word_dasm(address + 2);
 }
 
 void cpu_write_byte(unsigned int address, unsigned int value)
 {
-	if (!(u304 & 0x80)) {
-            u304_clk();
-            return;
-	}
+    if(address < fast_memsize) {
+        ram[address] = value;
+        return;
+    }
+    if (!(u304 & 0x80)) {
         u304_clk();
+        return;
+    }
+    u304_clk();
 
-	if (address < memsize) {
-		ram[address] = value;
-		return;
-	}
-	if (address < 0xFFF00000){ /* unmapped */
-		if (trace & TRACE_MEM)
-			fprintf(stderr,  "%08x: write to invalid space.\n", address);
-		return;
-        }
-	if (address < 0xFFF80000){ /* ROM */
-		if (trace & TRACE_MEM)
-			fprintf(stderr,  "%08x: write to ROM.\n", address);
-		return;
-        }
-	if (address < 0xFFFE0000){ /* ECB memory (unimplemented) */
-		if (trace & TRACE_MEM)
-			fprintf(stderr,  "%08x: write to ECB RAM.\n", address);
-		return;
-        }
-        if (address < 0xFFFF0000){ /* SRAM - 32KB mapped twice */
-                sram[address & 0x7FFF] = value;
-                return;
-        }
+    if (address < memsize) {
+        ram[address] = value;
+        return;
+    }
+    if (address < 0xFFF00000){ /* unmapped */
+        if (trace & TRACE_MEM)
+            fprintf(stderr,  "%08x: write to invalid space.\n", address);
+        return;
+    }
+    if (address < 0xFFF80000){ /* ROM */
+        if (trace & TRACE_MEM)
+            fprintf(stderr,  "%08x: write to ROM.\n", address);
+        return;
+    }
+    if (address < 0xFFFE0000){ /* ECB memory (unimplemented) */
+        if (trace & TRACE_MEM)
+            fprintf(stderr,  "%08x: write to ECB RAM.\n", address);
+        return;
+    }
+    if (address < 0xFFFF0000){ /* SRAM - 32KB mapped twice */
+        sram[address & 0x7FFF] = value;
+        return;
+    }
 
-        /* forced trace */
-        // fprintf(stderr, "[IO: write addr %04x = %02x]\n", address & 0xFFFF, value);
+    /* forced trace */
+    // fprintf(stderr, "[IO: write addr %04x = %02x]\n", address & 0xFFFF, value);
 
-	if ((address & 0xF0) == 0x20) {
-		ppide_write(ppide2, address & 0x03, value);
-		return;
-	}
-	if ((address & 0xF0) == 0x30) {
-		fdc_write(address, value);
-		return;
-	}
-	switch(address & 0xFF) {
-	/* DualSD */
-	case 0x08:
-	case 0x09:
-		dualsd_write(address, value);
-		return;
-	/* MFPIC */
-	case 0x40:
-		ns202_write(address & 0xFFFF, value);
-		return;
-	case 0x42:
-		cfg_write(value);
-		return;
-	case 0x43:
-		rtc_write(rtc, rtc_remap_w(value));
-		return;
-	case 0x44:
-	case 0x45:
-	case 0x46:
-	case 0x47:
-		ppide_write(ppide, address & 0x03, value);
-		return;
-	case 0x48:
-	case 0x49:
-	case 0x4A:
-	case 0x4B:
-	case 0x4C:
-	case 0x4D:
-	case 0x4E:
-	case 0x4F:
-		uart16x50_write(uart, address & 0x07, value);
-		return;
-	}
+    if ((address & 0xF0) == 0x20) {
+        ppide_write(ppide2, address & 0x03, value);
+        return;
+    }
+    if ((address & 0xF0) == 0x30) {
+        fdc_write(address, value);
+        return;
+    }
+    switch(address & 0xFF) {
+        /* DualSD */
+        case 0x08:
+        case 0x09:
+            dualsd_write(address, value);
+            return;
+            /* MFPIC */
+        case 0x40:
+            ns202_write(address & 0xFFFF, value);
+            return;
+        case 0x42:
+            cfg_write(value);
+            return;
+        case 0x43:
+            rtc_write(rtc, rtc_remap_w(value));
+            return;
+        case 0x44:
+        case 0x45:
+        case 0x46:
+        case 0x47:
+            ppide_write(ppide, address & 0x03, value);
+            return;
+        case 0x48:
+        case 0x49:
+        case 0x4A:
+        case 0x4B:
+        case 0x4C:
+        case 0x4D:
+        case 0x4E:
+        case 0x4F:
+            uart16x50_write(uart, address & 0x07, value);
+            return;
+    }
 }
 
 void cpu_write_word(unsigned int address, unsigned int value)
 {
-	cpu_write_byte(address, value >> 8);
-	cpu_write_byte(address + 1, value & 0xFF);
+    if(address < fast_memsize) {
+        ((uint16_t*)ram)[address >> 1] = htobe16(value);
+        return;
+    } else {
+        cpu_write_byte(address, value >> 8);
+        cpu_write_byte(address + 1, value & 0xFF);
+    }
 }
 
 void cpu_write_long(unsigned int address, unsigned int value)
 {
-    /* fast path for 32-bit RAM */
     if(address < fast_memsize) {
         ((uint32_t*)ram)[address >> 2] = htobe32(value);
     } else {
@@ -983,77 +1005,78 @@ void cpu_write_long(unsigned int address, unsigned int value)
 
 void cpu_write_pd(unsigned int address, unsigned int value)
 {
-	cpu_write_word(address + 2, value & 0xFFFF);
-	cpu_write_word(address, value >> 16);
+    cpu_write_word(address + 2, value & 0xFFFF);
+    cpu_write_word(address, value >> 16);
 }
 
 void cpu_instr_callback(void)
 {
-	if (trace & TRACE_CPU) {
-		char buf[128];
-		unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
-		m68k_disassemble(buf, pc, M68K_CPU_TYPE_68030);
-		fprintf(stderr, ">%08X %s\n", pc, buf);
-	}
+    if (trace & TRACE_CPU) {
+        char buf[128];
+        unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
+        m68k_disassemble(buf, pc, M68K_CPU_TYPE_68030);
+        fprintf(stderr, ">%08X %s\n", pc, buf);
+    }
 }
 
 static void device_init(void)
 {
-	irq_pending = 0;
-	ppide_reset(ppide);
-	uart16x50_reset(uart);
-	uart16x50_set_input(uart, 1);
-	uart16x50_signal_event(uart, 0x10); /* mini68K ROM wants the CTS bit asserted */
-        u304_reset();
+    irq_pending = 0;
+    ppide_reset(ppide);
+    uart16x50_reset(uart);
+    uart16x50_set_input(uart, 1);
+    uart16x50_signal_event(uart, 0x10); /* mini68K ROM wants the CTS bit asserted */
+    u304_reset();
 }
 
 static struct termios saved_term, term;
 
 static void cleanup(int sig)
 {
-	tcsetattr(0, 0, &saved_term);
-	if (rtc_loaded)
-		rtc_save(rtc, NVRAM_FILENAME);
-	exit(1);
+    tcsetattr(0, 0, &saved_term);
+    if (rtc_loaded)
+        rtc_save(rtc, NVRAM_FILENAME);
+    exit(1);
 }
 
 static void exit_cleanup(void)
 {
-	if (rtc_loaded)
-		rtc_save(rtc, NVRAM_FILENAME);
-	tcsetattr(0, 0, &saved_term);
+    if (rtc_loaded)
+        rtc_save(rtc, NVRAM_FILENAME);
+    tcsetattr(0, 0, &saved_term);
 }
 
 static void take_a_nap(void)
 {
     /* WRS: could be smarter here - measure time since we last slept? */
-	struct timespec t;
-	t.tv_sec = 0;
-	t.tv_nsec = 100000;
-	if (nanosleep(&t, NULL))
-		perror("nanosleep");
+    struct timespec t;
+    t.tv_sec = 0;
+    t.tv_nsec = 100000;
+    if (nanosleep(&t, NULL))
+        perror("nanosleep");
 }
 
 int cpu_irq_ack(int level)
 {
-	unsigned v = ns202_int_ack();
-	/* Now apply the board glue */
-	if (!(mfpic_cfg & 4)) {
-		v &= 7;
-		v |= mfpic_cfg & 0xF8;
-	} else {
-		v &= 0x0F;
-		v |= mfpic_cfg & 0xF0;
-	}
-	v <<= (mfpic_cfg & 3);
-	if (trace & TRACE_NS202)
-		fprintf(stderr, "68K vector %02X\n", v);
-	return v;
+    unsigned v = ns202_int_ack();
+    /* Now apply the board glue */
+    if (!(mfpic_cfg & 4)) {
+        v &= 7;
+        v |= mfpic_cfg & 0xF8;
+    } else {
+        v &= 0x0F;
+        v |= mfpic_cfg & 0xF0;
+    }
+    v <<= (mfpic_cfg & 3);
+    if (trace & TRACE_NS202)
+        fprintf(stderr, "68K vector %02X\n", v);
+    return v;
 }
 
+/* called by the 68K emulator when the CPU encounters a RESET instruction */
 void cpu_pulse_reset(void)
 {
-	device_init();
+    device_init();
 }
 
 void cpu_set_fc(int fc)
@@ -1062,225 +1085,225 @@ void cpu_set_fc(int fc)
 
 void usage(void)
 {
-	fprintf(stderr, "mini68k: [-m memsize][-r rompath][-i idepath][-I idepath][-s sdpath][-S sdpath][-d debug].\n");
-	fprintf(stderr, "memsize is in megabytes\n");
-	fprintf(stderr, "debug is a bitwise OR combination of the following:\n");
-	fprintf(stderr, "%5d   MEM\n",	 TRACE_MEM);
-	fprintf(stderr, "%5d   CPU\n",	 TRACE_CPU);
-	fprintf(stderr, "%5d   UART\n",  TRACE_UART);
-	fprintf(stderr, "%5d   PPIDE\n", TRACE_PPIDE);
-	fprintf(stderr, "%5d   RTC\n",	 TRACE_RTC);
-	fprintf(stderr, "%5d   FDC\n",	 TRACE_FDC);
-	fprintf(stderr, "%5d   NS202\n", TRACE_NS202);
-	fprintf(stderr, "%5d   SD\n",	 TRACE_SD);
-	exit(1);
+    fprintf(stderr, "mini68k: [-m memsize][-r rompath][-i idepath][-I idepath][-s sdpath][-S sdpath][-d debug].\n");
+    fprintf(stderr, "memsize is in megabytes\n");
+    fprintf(stderr, "debug is a bitwise OR combination of the following:\n");
+    fprintf(stderr, "%5d   MEM\n",	 TRACE_MEM);
+    fprintf(stderr, "%5d   CPU\n",	 TRACE_CPU);
+    fprintf(stderr, "%5d   UART\n",  TRACE_UART);
+    fprintf(stderr, "%5d   PPIDE\n", TRACE_PPIDE);
+    fprintf(stderr, "%5d   RTC\n",	 TRACE_RTC);
+    fprintf(stderr, "%5d   FDC\n",	 TRACE_FDC);
+    fprintf(stderr, "%5d   NS202\n", TRACE_NS202);
+    fprintf(stderr, "%5d   SD\n",	 TRACE_SD);
+    exit(1);
 }
 
 int main(int argc, char *argv[])
 {
-	int fd;
-	int fast = 0;
-	int opt;
-        int memsize_mb = MAXDRAMMB;
-	const char *romname = "kiss68030.rom";
-	const char *diskname = NULL;
-	const char *diskname2 = NULL;
-	const char *patha = NULL;
-	const char *pathb = NULL;
-	const char *sdname = NULL;
-	const char *sdname2 = NULL;
+    int fd;
+    int fast = 0;
+    int opt;
+    int memsize_mb = MAXDRAMMB;
+    const char *romname = "kiss68030.rom";
+    const char *diskname = NULL;
+    const char *diskname2 = NULL;
+    const char *patha = NULL;
+    const char *pathb = NULL;
+    const char *sdname = NULL;
+    const char *sdname2 = NULL;
 
-	while((opt = getopt(argc, argv, "d:fi:m:r:s:A:B:I:S:")) != -1) {
-		switch(opt) {
-		case 'd':
-			trace = atoi(optarg);
-			break;
-		case 'f':
-			fast = 1;
-			break;
-		case 'i':
-			diskname = optarg;
-			break;
-		case 'm':
-			memsize_mb = atoi(optarg);
-			break;
-		case 'r':
-			romname = optarg;
-			break;
-		case 's':
-			sdname = optarg;
-			break;
-		case 'S':
-			sdname2 = optarg;
-			break;
-		case 'A':
-			patha = optarg;
-			break;
-		case 'B':
-			pathb = optarg;
-			break;
-		case 'I':
-			diskname2 = optarg;
-			break;
-		default:
-			usage();
-		}
-	}
-
-	if (tcgetattr(0, &term) == 0) {
-		saved_term = term;
-		atexit(exit_cleanup);
-		signal(SIGINT, SIG_IGN);
-		signal(SIGQUIT, cleanup);
-		signal(SIGTSTP, SIG_IGN);
-		term.c_lflag &= ~ICANON;
-		term.c_iflag &= ~(ICRNL | IGNCR);
-		term.c_cc[VMIN] = 1;
-		term.c_cc[VTIME] = 0;
-		term.c_cc[VINTR] = 0;
-		term.c_cc[VSUSP] = 0;
-		term.c_cc[VEOF] = 0;
-		term.c_lflag &= ~(ECHO | ECHOE | ECHOK);
-		tcsetattr(0, 0, &term);
-	}
-
-	if (optind < argc)
-		usage();
-
-        memsize = memsize_mb << 20; /* convert MB to bytes */
-
-        if(memsize < 1024*1024){
-		fprintf(stderr, "%s: RAM size must be at least 1MB\n", argv[0]);
-		exit(1);
+    while((opt = getopt(argc, argv, "d:fi:m:r:s:A:B:I:S:")) != -1) {
+        switch(opt) {
+            case 'd':
+                trace = atoi(optarg);
+                break;
+            case 'f':
+                fast = 1;
+                break;
+            case 'i':
+                diskname = optarg;
+                break;
+            case 'm':
+                memsize_mb = atoi(optarg);
+                break;
+            case 'r':
+                romname = optarg;
+                break;
+            case 's':
+                sdname = optarg;
+                break;
+            case 'S':
+                sdname2 = optarg;
+                break;
+            case 'A':
+                patha = optarg;
+                break;
+            case 'B':
+                pathb = optarg;
+                break;
+            case 'I':
+                diskname2 = optarg;
+                break;
+            default:
+                usage();
         }
+    }
 
-	if(memsize > sizeof(ram)) {
-		fprintf(stderr, "%s: RAM size must be no more than %ldMB\n",
-			argv[0], (long)sizeof(ram) >> 20);
-		exit(1);
-	}
-        /* WRS: could use sizeof(ram) here but that causes us to touch memory that
-         * we then never touch again, causing the emulator to hog more RAM than it 
-         * actually needs? */
-	memset(ram, 0xA7, memsize);
-        memset(sram, 0xA7, sizeof(sram));
+    if (tcgetattr(0, &term) == 0) {
+        saved_term = term;
+        atexit(exit_cleanup);
+        signal(SIGINT, SIG_IGN);
+        signal(SIGQUIT, cleanup);
+        signal(SIGTSTP, SIG_IGN);
+        term.c_lflag &= ~ICANON;
+        term.c_iflag &= ~(ICRNL | IGNCR);
+        term.c_cc[VMIN] = 1;
+        term.c_cc[VTIME] = 0;
+        term.c_cc[VINTR] = 0;
+        term.c_cc[VSUSP] = 0;
+        term.c_cc[VEOF] = 0;
+        term.c_lflag &= ~(ECHO | ECHOE | ECHOK);
+        tcsetattr(0, 0, &term);
+    }
 
-	fd = open(romname, O_RDONLY);
-	if (fd == -1) {
-		perror(romname);
-		exit(1);
-	}
-	if (read(fd, rom, sizeof(rom)) != sizeof(rom)) {
-		fprintf(stderr, "%s: too short. Must be %ldKiB.\n", romname, (long)sizeof(rom) >> 10);
-		exit(1);
-	}
-	close(fd);
+    if (optind < argc)
+        usage();
 
-	ppide = ppide_create("hd0");
-	ppide_reset(ppide);
-	if (diskname) {
-		fd = open(diskname, O_RDWR);
-		if (fd == -1) {
-			perror(diskname);
-			exit(1);
-		}
-		if (ppide == NULL)
-			exit(1);
-		if (ppide_attach(ppide, 0, fd))
-			exit(1);
-	}
-	ppide_trace(ppide, trace & TRACE_PPIDE);
+    memsize = memsize_mb << 20; /* convert MB to bytes */
 
-	ppide2 = ppide_create("hd1");
-	ppide_reset(ppide2);
-	if (diskname2) {
-		fd = open(diskname2, O_RDWR);
-		if (fd == -1) {
-			perror(diskname2);
-			exit(1);
-		}
-		if (ppide2 == NULL)
-			exit(1);
-		if (ppide_attach(ppide2, 0, fd))
-			exit(1);
-	}
-	ppide_trace(ppide2, trace & TRACE_PPIDE);
+    if(memsize < 1024*1024){
+        fprintf(stderr, "%s: RAM size must be at least 1MB\n", argv[0]);
+        exit(1);
+    }
 
-        sd[0] = sd_create("sd0");
-        sd[1] = sd_create("sd1");
-        sd_reset(sd[0]);
-        sd_reset(sd[1]);
-	if (sdname) {
-		fd = open(sdname, O_RDWR);
-		if (fd == -1) {
-			perror(sdname);
-			exit(1);
-		}
-		sd_attach(sd[0], fd);
-	}
-	if (sdname2) {
-		fd = open(sdname2, O_RDWR);
-		if (fd == -1) {
-			perror(sdname2);
-			exit(1);
-		}
-		sd_attach(sd[1], fd);
-	}
-        sd_trace(sd[0], trace & TRACE_SD);
-        sd_trace(sd[1], trace & TRACE_SD);
+    if(memsize > sizeof(ram)) {
+        fprintf(stderr, "%s: RAM size must be no more than %ldMB\n",
+                argv[0], (long)sizeof(ram) >> 20);
+        exit(1);
+    }
+    /* WRS: could use sizeof(ram) here but that causes us to touch memory that
+     * we then never touch again, causing the emulator to hog more RAM than it 
+     * actually needs? */
+    memset(ram, 0xA7, memsize);
+    memset(sram, 0xA7, sizeof(sram));
 
-	uart = uart16x50_create();
-	if (trace & TRACE_UART)
-		uart16x50_trace(uart, 1);
+    fd = open(romname, O_RDONLY);
+    if (fd == -1) {
+        perror(romname);
+        exit(1);
+    }
+    if (read(fd, rom, sizeof(rom)) != sizeof(rom)) {
+        fprintf(stderr, "%s: too short. Must be %ldKiB.\n", romname, (long)sizeof(rom) >> 10);
+        exit(1);
+    }
+    close(fd);
 
-	rtc = rtc_create();
-	rtc_reset(rtc);
-	rtc_trace(rtc, trace & TRACE_RTC);
-	rtc_load(rtc, NVRAM_FILENAME);
-	rtc_loaded = 1;
+    ppide = ppide_create("hd0");
+    ppide_reset(ppide);
+    if (diskname) {
+        fd = open(diskname, O_RDWR);
+        if (fd == -1) {
+            perror(diskname);
+            exit(1);
+        }
+        if (ppide == NULL)
+            exit(1);
+        if (ppide_attach(ppide, 0, fd))
+            exit(1);
+    }
+    ppide_trace(ppide, trace & TRACE_PPIDE);
 
-	fdc = fdc_new();
+    ppide2 = ppide_create("hd1");
+    ppide_reset(ppide2);
+    if (diskname2) {
+        fd = open(diskname2, O_RDWR);
+        if (fd == -1) {
+            perror(diskname2);
+            exit(1);
+        }
+        if (ppide2 == NULL)
+            exit(1);
+        if (ppide_attach(ppide2, 0, fd))
+            exit(1);
+    }
+    ppide_trace(ppide2, trace & TRACE_PPIDE);
 
-	lib765_register_error_function(fdc_log);
+    sd[0] = sd_create("sd0");
+    sd[1] = sd_create("sd1");
+    sd_reset(sd[0]);
+    sd_reset(sd[1]);
+    if (sdname) {
+        fd = open(sdname, O_RDWR);
+        if (fd == -1) {
+            perror(sdname);
+            exit(1);
+        }
+        sd_attach(sd[0], fd);
+    }
+    if (sdname2) {
+        fd = open(sdname2, O_RDWR);
+        if (fd == -1) {
+            perror(sdname2);
+            exit(1);
+        }
+        sd_attach(sd[1], fd);
+    }
+    sd_trace(sd[0], trace & TRACE_SD);
+    sd_trace(sd[1], trace & TRACE_SD);
 
-	if (patha) {
-		drive_a = fd_newdsk();
-		fd_settype(drive_a, FD_35);
-		fd_setheads(drive_a, 2);
-		fd_setcyls(drive_a, 80);
-		fdd_setfilename(drive_a, patha);
-	} else
-		drive_a = fd_new();
+    uart = uart16x50_create();
+    if (trace & TRACE_UART)
+        uart16x50_trace(uart, 1);
 
-	if (pathb) {
-		drive_b = fd_newdsk();
-		fd_settype(drive_a, FD_35);
-		fd_setheads(drive_a, 2);
-		fd_setcyls(drive_a, 80);
-		fdd_setfilename(drive_a, pathb);
-	} else
-		drive_b = fd_new();
+    rtc = rtc_create();
+    rtc_reset(rtc);
+    rtc_trace(rtc, trace & TRACE_RTC);
+    rtc_load(rtc, NVRAM_FILENAME);
+    rtc_loaded = 1;
 
-	fdc_reset(fdc);
-	fdc_setisr(fdc, NULL);
+    fdc = fdc_new();
 
-	fdc_setdrive(fdc, 0, drive_a);
-	fdc_setdrive(fdc, 1, drive_b);
+    lib765_register_error_function(fdc_log);
 
-	m68k_init();
-	m68k_set_cpu_type(M68K_CPU_TYPE_68030);
-	m68k_pulse_reset();
+    if (patha) {
+        drive_a = fd_newdsk();
+        fd_settype(drive_a, FD_35);
+        fd_setheads(drive_a, 2);
+        fd_setcyls(drive_a, 80);
+        fdd_setfilename(drive_a, patha);
+    } else
+        drive_a = fd_new();
 
-	/* Init devices */
-	device_init();
+    if (pathb) {
+        drive_b = fd_newdsk();
+        fd_settype(drive_a, FD_35);
+        fd_setheads(drive_a, 2);
+        fd_setcyls(drive_a, 80);
+        fdd_setfilename(drive_a, pathb);
+    } else
+        drive_b = fd_new();
 
-	while (1) {
-		m68k_execute(3200); /* 32MHz target */
-		uart16x50_event(uart);
-		recalc_interrupts();
-		/* NS202 is run off the MF-PIC UART clock */
-		ns202_tick(184);
-		if (!fast)
-			take_a_nap();
-	}
+    fdc_reset(fdc);
+    fdc_setisr(fdc, NULL);
+
+    fdc_setdrive(fdc, 0, drive_a);
+    fdc_setdrive(fdc, 1, drive_b);
+
+    m68k_init();
+    m68k_set_cpu_type(&m68ki_cpu, M68K_CPU_TYPE_68030);
+    m68k_pulse_reset(&m68ki_cpu);
+
+    /* Init devices */
+    device_init();
+
+    while (1) {
+        m68k_execute(&m68ki_cpu, 3200); /* 32MHz target */
+        uart16x50_event(uart);
+        recalc_interrupts();
+        /* NS202 is run off the MF-PIC UART clock */
+        ns202_tick(184);
+        if (!fast)
+            take_a_nap();
+    }
 }

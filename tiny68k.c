@@ -11,15 +11,20 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <m68k.h>
+#include <m68kcpu.h>
 #include <arpa/inet.h>
 #include "ide.h"
 #include "duart.h"
 
-/* 16MB RAM except for the top 32K which is I/O */
+/* CPU */
+extern m68ki_cpu_core m68ki_cpu;
 
+/* 16MB RAM except for the top 32K which is I/O */
 static uint8_t ram[(16 << 20) - 32768];
+
 /* IDE controller */
 static struct ide_controller *ide;
+
 /* 68681 */
 static struct duart *duart;
 static int rcbus;
@@ -453,8 +458,8 @@ int main(int argc, char *argv[])
 		duart_trace(duart, 1);
 
 	m68k_init();
-	m68k_set_cpu_type(cputype);
-	m68k_pulse_reset();
+	m68k_set_cpu_type(&m68ki_cpu, cputype);
+	m68k_pulse_reset(&m68ki_cpu);
 
 	/* Init devices */
 	device_init();
@@ -464,7 +469,7 @@ int main(int argc, char *argv[])
 		   second. We do a blind 0.01 second sleep so we are actually
 		   emulating a bit under 10Mhz - which will do fine for
 		   testing this stuff */
-		m68k_execute(1000);
+		m68k_execute(&m68ki_cpu, 1000);
 		duart_tick(duart);
 		if (!fast)
 			take_a_nap();

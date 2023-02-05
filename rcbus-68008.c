@@ -31,6 +31,7 @@
 #include <errno.h>
 #include <sys/select.h>
 #include <m68k.h>
+#include <m68kcpu.h>
 #include "acia.h"
 #include "ide.h"
 #include "ppide.h"
@@ -38,6 +39,9 @@
 #include "16x50.h"
 #include "w5100.h"
 #include "sram_mmu8.h"
+
+/* CPU */
+extern m68ki_cpu_core m68ki_cpu;
 
 static uint8_t ramrom[1024 * 1024];	/* ROM low RAM high */
 
@@ -557,10 +561,10 @@ int main(int argc, char *argv[])
 	}
 	m68k_init();
 	/* Really should be 68008 */
-	m68k_set_cpu_type(M68K_CPU_TYPE_68000);
-	m68k_pulse_reset();
+	m68k_set_cpu_type(&m68ki_cpu, M68K_CPU_TYPE_68000);
+	m68k_pulse_reset(&m68ki_cpu);
 	while(1) {
-		m68k_execute(tstate_steps);	/* 4MHz roughly right for 8MHz 68008 */
+		m68k_execute(&m68ki_cpu, tstate_steps);	/* 4MHz roughly right for 8MHz 68008 */
 		system_process();
 	}
 }

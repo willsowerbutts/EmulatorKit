@@ -32,6 +32,9 @@
 #ifndef M68KCONF__HEADER
 #define M68KCONF__HEADER
 
+#define _GNU_SOURCE
+#include <stdint.h>
+
 /* define the EmulatorKit callback functions */
 extern void cpu_set_fc(int);
 extern int cpu_irq_ack(int);
@@ -101,7 +104,7 @@ extern void cpu_instr_callback(void);
  * To simulate real 68k behavior, m68k_write_32_pd() must first write the high
  * word to [address+2], and then write the low word to [address].
  */
-#define M68K_SIMULATE_PD_WRITES     OPT_ON
+#define M68K_SIMULATE_PD_WRITES     OPT_OFF
 
 /* If ON, CPU will call the interrupt acknowledge callback when it services an
  * interrupt.
@@ -192,7 +195,7 @@ extern void cpu_instr_callback(void);
  * access a word or longword at an odd address.
  * NOTE: This is only emulated properly for 68000 mode.
  */
-#define M68K_EMULATE_ADDRESS_ERROR  OPT_ON
+#define M68K_EMULATE_ADDRESS_ERROR  OPT_OFF
 
 
 /* Turn ON to enable logging of illegal instruction calls.

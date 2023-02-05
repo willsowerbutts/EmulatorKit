@@ -1,12 +1,14 @@
 
 CFLAGS = -Wall -pedantic -g3 -Werror
 
-all:	rc2014 rcbus-1802 rcbus-6303 rcbus-6502 rcbus-65c816-mini \
+TARGETS=rc2014 rcbus-1802 rcbus-6303 rcbus-6502 rcbus-65c816-mini \
 	rcbus-65c816 rcbus-6800 rcbus-68008 rcbus-6809 rcbus-68hc11 \
 	rcbus-80c188 rcbus-8085 rcbus-z8 rcbus-z180 rbcv2 searle linc80 \
 	makedisk markiv mbc2 smallz80 sbc2g z80mc simple80 flexbox tiny68k \
 	s100-z80 scelbi rb-mbc rcbus-tms9995 rhyophyre pz1 68knano \
 	littleboard mini68k kiss68030
+
+all:	$(TARGETS)
 
 sdl2:	rc2014_sdl2 nc100 nc200 n8_sdl2 scelbi_sdl2 nascom uk101 z180-mini-itx_sdl2 vz300
 
@@ -218,7 +220,7 @@ clean:
 	$(MAKE) --directory m68k clean && \
 	$(MAKE) --directory am9511 clean && \
 	$(MAKE) --directory ns32k clean && \
-	rm -f *.o *~ rc2014 rbcv2
+	rm -f *.o *~ $(TARGETS)
 
 SRCS := $(subst ./,,$(shell find . -name '*.c'))
 DEPDIR := .deps

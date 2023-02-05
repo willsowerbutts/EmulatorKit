@@ -50,13 +50,15 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <m68k.h>
+#include <m68kcpu.h>
 #include "16x50.h"
 #include "ppide.h"
 #include "rtc_bitbang.h"
 #include "sdcard.h"
 #include "lib765/include/765.h"
 
-
+/* CPU */
+extern m68ki_cpu_core m68ki_cpu;
 /* IDE controller */
 static struct ppide *ppide;	/* MFPIC */
 static struct ppide *ppide2;	/* DiskIO */
@@ -1206,15 +1208,15 @@ int main(int argc, char *argv[])
 	fdc_setdrive(fdc, 1, drive_b);
 
 	m68k_init();
-	m68k_set_cpu_type(cputype);
-	m68k_pulse_reset();
+	m68k_set_cpu_type(&m68ki_cpu, cputype);
+	m68k_pulse_reset(&m68ki_cpu);
 
 	/* Init devices */
 	device_init();
 
 	while (1) {
 		/* Approximate a 68008 */
-		m68k_execute(400);
+		m68k_execute(&m68ki_cpu, 400);
 		uart16x50_event(uart);
 		recalc_interrupts();
 		/* The CPU runs at 8MHz but the NS202 is run off the serial

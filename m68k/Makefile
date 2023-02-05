@@ -1,4 +1,4 @@
-MUSASHIFILES     = m68kcpu.c m68kdasm.c softfloat/softfloat.c
+MUSASHIFILES     = m68kcpu.c m68kdasm.c softfloat/softfloat.c softfloat/softfloat_fpsp.c
 MUSASHIGENCFILES = m68kops.c
 MUSASHIGENHFILES = m68kops.h
 MUSASHIGENERATOR = m68kmake
