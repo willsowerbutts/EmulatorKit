@@ -192,17 +192,21 @@ void cpu_dump_regs(void)
     fprintf(stderr, "D3=%08x\tD7=%08x\tA3=%08x\tA7=%08x\n", d3, d7, a3, a7);
     fprintf(stderr, "PC=%08x\tSR=%08x\tSP=%08x\tUSP=%08x\n", pc, sr, sp, usp);
     fprintf(stderr, "ISP=%08x\tMSP=%08x\tSFC=%08x\tDFC=%08x\n", isp, msp, sfc, dfc);
-    fprintf(stderr, "VBR=%08x\tCACR=%08x\tCAAR=%08x\n", vbr, cacr, caar);
+    fprintf(stderr, "VBR=%08x\tCACR=%08x\tCAAR=%08x\n\n", vbr, cacr, caar);
 }
 
+unsigned int next_char_last_err_pc = 0;
 unsigned int next_char(void)
 {
 	char c;
 
         if(!(check_chario() & 1)){ /* not ready */
             unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
-            fprintf(stderr, "(tty read before ready, ++PC=%08x)\n", pc);
-            cpu_dump_regs();
+            if(pc != next_char_last_err_pc){
+                next_char_last_err_pc = pc;
+                fprintf(stderr, "(tty read before ready, ++PC=%08x)\n", pc);
+                cpu_dump_regs();
+            }
             return 0xFF;
         }
 
@@ -796,10 +800,16 @@ unsigned int do_cpu_read_byte(unsigned int address, unsigned debug)
 
     if (address < memsize)
         return ram[address];
-    /* WRS: I seem to recall the real hardware raises an exception on reads
-     * outside of the physically installed RAM. Not sure how to model this yet */
-    if (address < 0xFFF00000) /* unmapped: WRS: should raise an exception here? */
+    if (address < 0xFFF00000){ /* unmapped */
+        if((memsize <= (64<<20)  && address >= (64<<20)) ||
+           (memsize <= (256<<20) && address >= (256<<20))){
+            unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
+            fprintf(stderr, "(bus error: read at %08x, memsize=%08x, ++PC=%08x)\n", address, memsize, pc);
+            //cpu_dump_regs();
+            m68ki_exception_trap(&m68ki_cpu, EXCEPTION_BUS_ERROR);
+        }
         return 0xFF;
+    }
     if (address < 0xFFF80000) /* ROM! Everyone loves ROM */
         return rom[address & (ROMSIZE-1)];
     if (address < 0xFFFE0000) /* ECB memory: not implemented */
@@ -813,9 +823,6 @@ unsigned int do_cpu_read_byte(unsigned int address, unsigned debug)
         return 0xFF;
 
     address &= 0xFFFF;
-
-    /* forced trace */
-    // fprintf(stderr, "[IO: read addr %04x]\n", address);
 
     if ((address & 0xF0) == 0x20)
         return ppide_read(ppide2, address & 0x03);
@@ -919,6 +926,13 @@ void cpu_write_byte(unsigned int address, unsigned int value)
     if (address < 0xFFF00000){ /* unmapped */
         if (trace & TRACE_MEM)
             fprintf(stderr,  "%08x: write to invalid space.\n", address);
+        if((memsize <= (64<<20)  && address >= (64<<20)) ||
+           (memsize <= (256<<20) && address >= (256<<20))){
+            unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
+            fprintf(stderr, "(bus error: write at %08x, memsize=%08x, ++PC=%08x)\n", address, memsize, pc);
+            //cpu_dump_regs();
+            m68ki_exception_trap(&m68ki_cpu, EXCEPTION_BUS_ERROR);
+        }
         return;
     }
     if (address < 0xFFF80000){ /* ROM */
@@ -935,9 +949,6 @@ void cpu_write_byte(unsigned int address, unsigned int value)
         sram[address & 0x7FFF] = value;
         return;
     }
-
-    /* forced trace */
-    // fprintf(stderr, "[IO: write addr %04x = %02x]\n", address & 0xFFFF, value);
 
     if ((address & 0xF0) == 0x20) {
         ppide_write(ppide2, address & 0x03, value);
@@ -1017,6 +1028,9 @@ void cpu_instr_callback(void)
         m68k_disassemble(buf, pc, M68K_CPU_TYPE_68030);
         fprintf(stderr, ">%08X %s\n", pc, buf);
     }
+    // unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
+    // if(pc == 0xfff006b6 || pc == 0xfff00698 || pc == 0xfff006c6)
+    //     cpu_dump_regs();
 }
 
 static void device_init(void)
@@ -1093,9 +1107,9 @@ void cpu_set_fc(int fc)
 {
 }
 
-void usage(void)
+void usage(const char *name)
 {
-    fprintf(stderr, "mini68k: [-m memsize][-r rompath][-i idepath][-I idepath][-s sdpath][-S sdpath][-d debug][-D debug].\n");
+    fprintf(stderr, "%s: [-m memsize][-r rompath][-i idepath][-I idepath][-s sdpath][-S sdpath][-d debug][-D debug].\n", name);
     fprintf(stderr, "memsize is in megabytes\n");
     fprintf(stderr, "debug is a bitwise OR combination of the following:\n");
     fprintf(stderr, "%5d   MEM\n",	 TRACE_MEM);
@@ -1159,7 +1173,7 @@ int main(int argc, char *argv[])
                 diskname2 = optarg;
                 break;
             default:
-                usage();
+                usage(argv[0]);
         }
     }
 
@@ -1182,7 +1196,7 @@ int main(int argc, char *argv[])
     }
 
     if (optind < argc)
-        usage();
+        usage(argv[0]);
 
     if(memsize_mb < 1){
         fprintf(stderr, "%s: RAM size must be at least 1MB\n", argv[0]);
