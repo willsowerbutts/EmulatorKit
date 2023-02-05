@@ -678,33 +678,68 @@ static void take_a_nap(void)
 
 int cpu_irq_ack(int level)
 {
-    unsigned v = ns202_int_ack();
-    m68k_set_irq(0);
-    /* Now apply the board glue */
-    if (!(mfpic_cfg & 4)) {
-        v &= 7;
-        v |= mfpic_cfg & 0xF8;
-    } else {
-        v &= 0x0F;
-        v |= mfpic_cfg & 0xF0;
+    uint8_t v, i;
+
+    i = ns202_int_ack();
+    m68k_set_irq(M68K_IRQ_NONE); /* clear IRQ */
+
+    /*
+    ** computing the vector:
+    **            bit7   bit6   bit5   bit4   bit3   bit2   bit1   bit0
+    ** mfpic_cfg  VEC7   VEC6   VEC5   VEC4   VEC3   OPT168 S0     S1
+    ** S1=0,S0=0| VEC7   VEC6   VEC5   VEC4   IID3V3 IID2   IID1   IID0
+    ** S1=0,S0=1| VEC7   VEC6   VEC5   IID3V4 IID2   IID1   IID0   VEC3
+    ** S1=1,S0=0| VEC7   VEC6   VEC5   IID2   IID1   IID0   VEC4   VEC3
+    ** S1=1,S0=1| VEC7   VEC6   IID2   IID1   IID0   VEC5   VEC4   VEC3
+    **
+    ** IID3V4 = OPT168 ? IID3 : VEC4
+    ** IID3V3 = OPT168 ? IID3 : VEC3
+    */
+    switch(mfpic_cfg & 3){ /* shift bits S0, S1 */
+        case 0:
+            if(mfpic_cfg & 4){ /* OPT168 = 1: 16 interrupts */
+                i &= 0x0F;
+                v = (mfpic_cfg & 0xF0) | i;
+            }else{ /* OPT168 = 0: 8 interrupts */
+                i &= 0x07;
+                v = (mfpic_cfg & 0xF8) | i;
+            }
+            break;
+        case 1:
+            if(mfpic_cfg & 4){ /* OPT168 = 1: 16 interrupts */
+                i &= 0x0F;
+                v = (mfpic_cfg & 0xE0) | (i << 1) | ((mfpic_cfg & 0x08) >> 3);
+            }else{ /* OPT168 = 0: 8 interrupts */
+                i &= 0x07;
+                v = (mfpic_cfg & 0xF0) | (i << 1) | ((mfpic_cfg & 0x08) >> 3);
+            }
+            break;
+        case 2:
+            i &= 0x08;
+            v = (mfpic_cfg & 0xE0) | (i << 2) | ((mfpic_cfg & 0x18) >> 3);
+            break;
+        case 3:
+            i &= 0x08;
+            v = (mfpic_cfg & 0xC0) | (i << 3) | ((mfpic_cfg & 0x38) >> 3);
+            break;
     }
-    v <<= (mfpic_cfg & 3);
+
     if (trace & TRACE_NS202)
-        fprintf(stderr, "68K vector %02X\n", v);
+        fprintf(stderr, "68K interrupt ACK: vector %02X\n", v);
+
     return v;
 }
 
 void recalc_interrupts(void)
 {
-    if (uart16x50_irq_pending(uart))
-        ns202_raise(12);
-    /* TODO: which IRQ */
-    if (ns202_irq_asserted()){
-        //             if (trace & TRACE_NS202)
-        //                     fprintf(stderr,  "IRQ raised\n");
-        m68k_set_irq(M68K_IRQ_2);
-    } else
-        m68k_set_irq(0);
+    /* OPT16/8=0: UART on IRQ 4, OPT16/8=1: UART on IRQ 12 */
+    if(uart16x50_irq_pending(uart))
+        ns202_raise(mfpic_cfg & 4 ? 12 : 4);
+
+    /* TODO IDE */
+
+    /* NS202 signals CPU interrupt with IPL0=0, IPL1=1, IPL2=0 */
+    m68k_set_irq(ns202_irq_asserted() ? M68K_IRQ_2 : M68K_IRQ_NONE);
 }
 
 
