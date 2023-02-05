@@ -131,11 +131,11 @@ tiny68k.o: tiny68k.c m68k/lib68k.a
 68knano.o: 68knano.c m68k/lib68k.a
 	$(CC) $(CFLAGS) -Im68k -c 68knano.c
 
-mini68k: mini68k.o ide.o ppide.o 16x50.o rtc_bitbang.o sdcard.o m68k/lib68k.a lib765/lib/lib765.a
-	cc -g3 mini68k.o ide.o ppide.o 16x50.o rtc_bitbang.o sdcard.o m68k/lib68k.a lib765/lib/lib765.a -o mini68k
+mini68k: mini68k.o ide.o ppide.o 16x50.o ns202.o rtc_bitbang.o sdcard.o m68k/lib68k.a lib765/lib/lib765.a
+	cc -g3 mini68k.o ide.o ppide.o 16x50.o ns202.o rtc_bitbang.o sdcard.o m68k/lib68k.a lib765/lib/lib765.a -o mini68k
 
-kiss68030: kiss68030.o ide.o ppide.o 16x50.o rtc_bitbang.o sdcard.o m68k/lib68k.a lib765/lib/lib765.a
-	cc -g3 kiss68030.o ide.o ppide.o 16x50.o rtc_bitbang.o sdcard.o m68k/lib68k.a lib765/lib/lib765.a -o kiss68030
+kiss68030: kiss68030.o ide.o ppide.o 16x50.o ns202.o rtc_bitbang.o sdcard.o m68k/lib68k.a lib765/lib/lib765.a
+	cc -g3 kiss68030.o ide.o ppide.o 16x50.o ns202.o rtc_bitbang.o sdcard.o m68k/lib68k.a lib765/lib/lib765.a -o kiss68030
 
 mini68k.o: mini68k.c m68k/lib68k.a
 	$(CC) $(CFLAGS) -Im68k -c mini68k.c
