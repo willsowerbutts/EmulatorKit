@@ -71,12 +71,36 @@ static unsigned ns202_test16(unsigned r, unsigned n)
     return !!(ns202.reg[r] & (1 << n));
 }
 
+static unsigned prev_ipnd=0, prev_isrv=0, prev_imsk;
+void trace_ipnd_isrv(void)
+{
+    if(ns202.trace){
+        unsigned int ipnd, isrv, imsk;
+        ipnd = (ns202.reg[R_IPND+1] << 8) | ns202.reg[R_IPND];
+        isrv = (ns202.reg[R_ISRV+1] << 8) | ns202.reg[R_ISRV];
+        imsk = (ns202.reg[R_IMSK+1] << 8) | ns202.reg[R_IMSK];
+        if(ipnd != prev_ipnd){
+            fprintf(stderr, "IPND=%04x->%04x ", prev_ipnd, ipnd);
+            prev_ipnd = ipnd;
+        }
+        if(isrv != prev_isrv){
+            fprintf(stderr, "ISRV=%04x->%04x ", prev_isrv, isrv);
+            prev_isrv = isrv;
+        }
+        if(imsk != prev_imsk){
+            fprintf(stderr, "IMSK=%04x->%04x ", prev_imsk, imsk);
+            prev_imsk = imsk;
+        }
+    }
+}
+
 static void ns202_set16(unsigned r, unsigned n)
 {
     if (n >= 8)
         ns202.reg[r + 1] |= 1 << (n - 8);
     else
         ns202.reg[r] |= 1 << n;
+    trace_ipnd_isrv();
 }
 
 static void ns202_clear16(unsigned r, unsigned n)
@@ -85,6 +109,7 @@ static void ns202_clear16(unsigned r, unsigned n)
         ns202.reg[r + 1] &= ~(1 << (n - 8));
     else
         ns202.reg[r] &= ~(1 << n);
+    trace_ipnd_isrv();
 }
 
 /* TODO - rotating priority */
@@ -131,7 +156,7 @@ unsigned int ns202_int_ack(void)
     ns202_clear16(R_IPND, live);
     ns202_set16(R_ISRV, live);
     if (ns202.trace)
-        fprintf(stderr, "ns202: intack %d\n", live);
+        fprintf(stderr, "ns202: intack irq%d, ", live);
     /* And the interrupt is dropped */
     ns202.irq = 0;
     /* Check if there isn't now a higher priority into to interrupt the
@@ -139,7 +164,7 @@ unsigned int ns202_int_ack(void)
     ns202_compute_int();
     live |= ns202.reg[R_HVCT] & 0xF0;
     if (ns202.trace)
-        fprintf(stderr, "ns202: intack vector %02X\n", live);
+        fprintf(stderr, "vector 0x%02X\n", live);
     return live;
 }
 
@@ -237,19 +262,17 @@ static unsigned int do_ns202_read(unsigned int address)
 unsigned int ns202_read(unsigned int address)
 {
     unsigned r = do_ns202_read(address);
-    if (ns202.trace)
-        fprintf(stderr, "ns202_read %08X[%-2d] = %02X\n", address,
-                (address >> 8) & 0x1F, r);
+    if (ns202.trace > 1)
+        fprintf(stderr, "ns202_read [%02d] = %02X\n", (address >> 8) & 0x1F, r);
     return r;
 }
 
 void ns202_write(unsigned int address, unsigned int value)
 {
     unsigned ns32_reg = (address >> 8) & 0x1F;
-    //	unsigned ns32_sti = (address >> 8) & 0x20;
 
-    if (ns202.trace)
-        fprintf(stderr, "ns202_write %08X[%-2d] = %02X\n", address, ns32_reg, value);
+    if (ns202.trace > 1)
+        fprintf(stderr, "ns202_write [%02d] = %02X\n", ns32_reg, value);
     switch(ns32_reg) {
         case R_HVCT:
             break;
@@ -317,8 +340,12 @@ void ns202_write(unsigned int address, unsigned int value)
 
 void ns202_raise(unsigned irq)
 {
-    if (ns202.reg[R_MCTL] & 0x08)	/* FRZ */
+    if (ns202.reg[R_MCTL] & 0x08)	/* FRZ (freeze) - prevents interrupts being raised */
         return;
+    if(ns202.trace){
+        if(!ns202_test16(R_IPND, irq))
+            fprintf(stderr, "ns202: raised irq%d\n", irq);
+    }
     ns202_set16(R_IPND, irq);
     ns202_compute_int();
 }
@@ -327,6 +354,7 @@ void ns202_counter(void)
 {
     uint8_t cctl = ns202.reg[R_CCTL];
     uint8_t cictl = ns202.reg[R_CICTL];
+
     /* Split clocks, low enabled */
     if ((cctl & 0x84) == 0x04) {
         /* Low counter decrement */
@@ -390,11 +418,14 @@ void ns202_tick(unsigned clocks)
     static unsigned dclock;
     unsigned scale = (ns202.reg[R_CCTL] & 0x40) ? 4 : 1;
 
+    /* TODO there must be a more efficient way to do this! 
+     * surely we can deal with multiple ticks in one go */
     dclock += clocks;
     while (dclock >= scale) {
         dclock -= scale;
         ns202_counter();
     }
+
     /* Update LCCV/HCCV if we should do so */
     if (!(ns202.reg[R_MCTL] & 0x80)) {	/* CFRZ */
         ns202.reg[28] = ns202.ct_l;

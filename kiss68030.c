@@ -196,18 +196,17 @@ void cpu_dump_regs(void)
     fprintf(stderr, "VBR=%08x\tCACR=%08x\tCAAR=%08x\n\n", vbr, cacr, caar);
 }
 
-unsigned int next_char_last_err_pc = 0;
+#undef WARN_ON_READ_BEFORE_READY
 unsigned int next_char(void)
 {
 	char c;
 
         if(!(check_chario() & 1)){ /* not ready */
+#ifdef WARN_ON_READ_BEFORE_READY
             unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
-            if(pc != next_char_last_err_pc){
-                next_char_last_err_pc = pc;
-                fprintf(stderr, "(tty read before ready, ++PC=%08x)\n", pc);
-                cpu_dump_regs();
-            }
+            fprintf(stderr, "(tty read before ready, ++PC=%08x)\n", pc);
+            cpu_dump_regs();
+#endif
             return 0xFF;
         }
 
@@ -736,7 +735,8 @@ void recalc_interrupts(void)
     if(uart16x50_irq_pending(uart))
         ns202_raise(mfpic_cfg & 4 ? 12 : 4);
 
-    /* TODO IDE */
+    if(ppide->ide->drive[0].intrq || ppide->ide->drive[1].intrq)
+        ns202_raise(9);
 
     /* NS202 signals CPU interrupt with IPL0=0, IPL1=1, IPL2=0 */
     m68k_set_irq(ns202_irq_asserted() ? M68K_IRQ_2 : M68K_IRQ_NONE);
