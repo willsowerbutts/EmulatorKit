@@ -97,7 +97,7 @@ static uint8_t rom[ROMSIZE];
 /* Config register on the MFPIC */
 static uint8_t mfpic_cfg;
 
-static int trace = 0;
+static int trace = 0, trace_alt = 0;
 
 #define TRACE_MEM	1
 #define TRACE_CPU	2
@@ -870,7 +870,7 @@ unsigned int cpu_read_word(unsigned int address)
 {
     unsigned int v;
     if(address < fast_memsize)
-        v = be16toh(((uint16_t*)ram)[address >> 1]);
+        v = be16toh(*((uint16_t*)&ram[address]));
     else
         v = do_cpu_read_word(address, 0);
     if (trace & TRACE_MEM)
@@ -887,7 +887,7 @@ unsigned int cpu_read_long(unsigned int address)
 {
     unsigned int v;
     if(address < fast_memsize)
-        v = be32toh(((uint32_t*)ram)[address >> 2]);
+        v = be32toh(*((uint32_t*)&ram[address]));
     else
         v = (cpu_read_word(address) << 16) | cpu_read_word(address + 2);
     if (trace & TRACE_MEM)
@@ -985,7 +985,7 @@ void cpu_write_byte(unsigned int address, unsigned int value)
 void cpu_write_word(unsigned int address, unsigned int value)
 {
     if(address < fast_memsize) {
-        ((uint16_t*)ram)[address >> 1] = htobe16(value);
+        *((uint16_t*)&ram[address]) = htobe16(value);
         return;
     } else {
         cpu_write_byte(address, value >> 8);
@@ -996,7 +996,7 @@ void cpu_write_word(unsigned int address, unsigned int value)
 void cpu_write_long(unsigned int address, unsigned int value)
 {
     if(address < fast_memsize) {
-        ((uint32_t*)ram)[address >> 2] = htobe32(value);
+        *((uint32_t*)&ram[address]) = htobe32(value);
     } else {
 	cpu_write_word(address, value >> 16);
 	cpu_write_word(address + 2, value & 0xFFFF);
@@ -1046,6 +1046,16 @@ static void exit_cleanup(void)
     tcsetattr(0, 0, &saved_term);
 }
 
+static void toggle_trace(int sig)
+{
+    int s;
+
+    s = trace;
+    trace = trace_alt;
+    trace_alt = s;
+    fprintf(stderr, "[trace %d]", trace);
+}
+
 static void take_a_nap(void)
 {
     /* WRS: could be smarter here - measure time since we last slept? */
@@ -1085,7 +1095,7 @@ void cpu_set_fc(int fc)
 
 void usage(void)
 {
-    fprintf(stderr, "mini68k: [-m memsize][-r rompath][-i idepath][-I idepath][-s sdpath][-S sdpath][-d debug].\n");
+    fprintf(stderr, "mini68k: [-m memsize][-r rompath][-i idepath][-I idepath][-s sdpath][-S sdpath][-d debug][-D debug].\n");
     fprintf(stderr, "memsize is in megabytes\n");
     fprintf(stderr, "debug is a bitwise OR combination of the following:\n");
     fprintf(stderr, "%5d   MEM\n",	 TRACE_MEM);
@@ -1113,10 +1123,13 @@ int main(int argc, char *argv[])
     const char *sdname = NULL;
     const char *sdname2 = NULL;
 
-    while((opt = getopt(argc, argv, "d:fi:m:r:s:A:B:I:S:")) != -1) {
+    while((opt = getopt(argc, argv, "d:fi:m:r:s:A:B:I:S:D:")) != -1) {
         switch(opt) {
             case 'd':
                 trace = atoi(optarg);
+                break;
+            case 'D':
+                trace_alt = atoi(optarg);
                 break;
             case 'f':
                 fast = 1;
@@ -1156,6 +1169,7 @@ int main(int argc, char *argv[])
         signal(SIGINT, SIG_IGN);
         signal(SIGQUIT, cleanup);
         signal(SIGTSTP, SIG_IGN);
+        signal(SIGUSR1, toggle_trace);
         term.c_lflag &= ~ICANON;
         term.c_iflag &= ~(ICRNL | IGNCR);
         term.c_cc[VMIN] = 1;
@@ -1170,16 +1184,16 @@ int main(int argc, char *argv[])
     if (optind < argc)
         usage();
 
-    memsize = memsize_mb << 20; /* convert MB to bytes */
-
-    if(memsize < 1024*1024){
+    if(memsize_mb < 1){
         fprintf(stderr, "%s: RAM size must be at least 1MB\n", argv[0]);
         exit(1);
     }
 
+    memsize = memsize_mb << 20; /* convert MB to bytes */
+
     if(memsize > sizeof(ram)) {
         fprintf(stderr, "%s: RAM size must be no more than %ldMB\n",
-                argv[0], (long)sizeof(ram) >> 20);
+                argv[0], (long)(sizeof(ram) >> 20));
         exit(1);
     }
     /* WRS: could use sizeof(ram) here but that causes us to touch memory that
