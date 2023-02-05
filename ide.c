@@ -624,7 +624,7 @@ uint8_t ide_read8(struct ide_controller *c, uint8_t r)
     case ide_lba_hi:
       return t->lba3;
     case ide_lba_top:
-      return t->lba4;
+      return t->lba4 | 0x80 | 0x20; /* bits 5 and 7 should always be set */
     case ide_status_r:
       d->intrq = 0;		/* Acked */
     case ide_altst_r:
