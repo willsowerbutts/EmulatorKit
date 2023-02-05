@@ -77,6 +77,9 @@ const uint8_t ide_magic[8] = {
   '1','D','E','D','1','5','C','0'
 };
 
+void ide_make_identity_page(uint16_t *ident, uint16_t c, uint8_t h, uint8_t s, 
+        int lba, const char *firmware, const char *model);
+
 #ifdef HEXDUMP
 static char *charmap(uint8_t v)
 {
@@ -114,7 +117,6 @@ static void hexdump(uint8_t *bp)
 #define HEXDUMP_DATA(d) ;
 #endif
 
-
 /* FIXME: use proper endian convertors! */
 static uint16_t le16(uint16_t v)
 {
@@ -150,7 +152,7 @@ static off_t xlate_block(struct ide_taskfile *t)
 /*    fprintf(stderr, "XLATE LBA %02X:%02X:%02X:%02X\n",
       t->lba4, t->lba3, t->lba2, t->lba1);*/
     if (d->lba)
-      return 2 + (((t->lba4 & DEVH_HEAD) << 24) | (t->lba3 << 16) | (t->lba2 << 8) | t->lba1);
+      return (d->raw ? 0 : 2) + (((t->lba4 & DEVH_HEAD) << 24) | (t->lba3 << 16) | (t->lba2 << 8) | t->lba1);
     ide_fault(d, "LBA on non LBA drive");
   }
 
@@ -168,7 +170,7 @@ static off_t xlate_block(struct ide_taskfile *t)
   /* Sector 1 is first */
   /* Images generally go cylinder/head/sector. This also matters if we ever
      implement more advanced geometry setting */
-  return 1 + ((cyl * d->heads) + (t->lba4 & DEVH_HEAD)) * d->sectors + t->lba1;
+  return 1 + ((cyl * d->heads) + (t->lba4 & DEVH_HEAD)) * d->sectors + t->lba1 - (d->raw ? 2 : 0);
 }
 
 /* Indicate the drive is ready */
@@ -755,9 +757,29 @@ int ide_attach(struct ide_controller *c, int drive, int fd)
     ide_fault(d, "i/o error on attach");
     return -1;
   }
+  /* check for presence of magic signature */
   if (memcmp(d->data, ide_magic, 8)) {
-    ide_fault(d, "bad magic");
-    return -1;
+    /* no signature -- but maybe we can treat it as a raw disk image? */
+    off_t length = lseek(fd, 0, SEEK_END);
+    if(length % (512*16*128) != 0){
+      ide_fault(d, "bad magic");
+      return -1;
+    }
+    length /= 512;
+
+    /* guess values for C, H, S that are close */
+    /* there's almost certainly a better way! */
+    int c = length / (16*128);
+    // if(length % (16*128))
+    //     c++;
+    if(c > 65535){
+        ide_fault(d, "raw image file too large");
+        return -1;
+    }
+    d->raw = 1;
+    ide_make_identity_page(d->identify, c, 16, 128, 1, "RAWDISK", "Raw disk image");
+  }else{
+    d->raw = 0;
   }
   d->fd = fd;
   d->present = 1;
@@ -765,9 +787,9 @@ int ide_attach(struct ide_controller *c, int drive, int fd)
   d->sectors = le16(d->identify[6]);
   d->cylinders = le16(d->identify[1]);
   if (d->identify[49] & le16(1 << 9))
-    d->lba = 1;
+      d->lba = 1;
   else
-    d->lba = 0;
+      d->lba = 0;
   return 0;
 }
 
@@ -846,89 +868,20 @@ static void make_serial(uint16_t *p)
   make_ascii(p, buf, 20);
 }
 
-int ide_make_drive(uint8_t type, int fd, int sparse_file)
+void ide_make_identity_page(uint16_t *ident, uint16_t c, uint8_t h, uint8_t s, 
+        int lba, const char *firmware, const char *model)
 {
-  uint8_t s, h;
-  uint16_t c;
   uint32_t sectors;
-  uint16_t ident[256];
-
-  if (type < 1 || type > MAX_DRIVE_TYPE)
-    return -2;
-
   memset(ident, 0, 512);
-  memcpy(ident, ide_magic, 8);
-  if (write(fd, ident, 512) != 512)
-    return -1;
-
-  memset(ident, 0, 8);
   ident[0] = le16((1 << 15) | (1 << 6));	/* Non removable */
   make_serial(ident + 10);
-  ident[47] = 0; /* no read multi for now */
+  ident[47] = 0;                                /* no read multi for now */
   ident[51] = le16(240 /* PIO2 */ << 8);	/* PIO cycle time */
-  ident[53] = le16(1);		/* Geometry words are valid */
-
-  switch(type) {
-    case ACME_ROADRUNNER:
-      /* 504MB drive with LBA support */
-      c = 1024;
-      h = 16;
-      s = 63;
-      make_ascii(ident + 23, "A001.001", 8);
-      make_ascii(ident + 27, "ACME ROADRUNNER v0.1", 40);
-      ident[49] = le16(1 << 9); /* LBA */
-      break;
-    case ACME_ULTRASONICUS:
-      /* 40MB drive with LBA support */
-      c = 977;
-      h = 5;
-      s = 16;
-      ident[49] = le16(1 << 9); /* LBA */
-      make_ascii(ident + 23, "A001.001", 8);
-      make_ascii(ident + 27, "ACME ULTRASONICUS AD INFINITUM v0.1", 40);
-      break;
-    case ACME_NEMESIS:
-      /* 20MB drive with LBA support */
-      c = 615;
-      h = 4;
-      s = 16;
-      ident[49] = le16(1 << 9); /* LBA */
-      make_ascii(ident + 23, "A001.001", 8);
-      make_ascii(ident + 27, "ACME NEMESIS RIDICULII v0.1", 40);
-      break;
-    case ACME_COYOTE:
-      /* 20MB drive without LBA support */
-      c = 615;
-      h = 4;
-      s = 16;
-      make_ascii(ident + 23, "A001.001", 8);
-      make_ascii(ident + 27, "ACME COYOTE v0.1", 40);
-      break;
-    case ACME_ACCELLERATTI:
-      c = 1024;
-      h = 16;
-      s = 16;
-      ident[49] = le16(1 << 9); /* LBA */
-      make_ascii(ident + 23, "A001.001", 8);
-      make_ascii(ident + 27, "ACME ACCELLERATTI INCREDIBILUS v0.1", 40);
-      break;
-    case ACME_ZIPPIBUS:
-      c = 1024;
-      h = 16;
-      s = 32;
-      ident[49] = le16(1 << 9); /* LBA */
-      make_ascii(ident + 23, "A001.001", 8);
-      make_ascii(ident + 27, "ACME ZIPPIBUS v0.1", 40);
-      break;
-    case ACME_BIGGUS_DISKUS:
-      c = 8192;
-      h = 16;
-      s = 128;
-      ident[49] = le16(1 << 9); /* LBA */
-      make_ascii(ident + 23, "A001.001", 8);
-      make_ascii(ident + 27, "ACME BIGGUS DISKUS v0.1", 40);
-      break;
-  }
+  ident[53] = le16(1);		                /* Geometry words are valid */
+  if(lba)
+    ident[49] = le16(1 << 9);                   /* LBA */
+  make_ascii(ident + 23, firmware, 8);
+  make_ascii(ident + 27, model, 40);
   ident[1] = le16(c);
   ident[3] = le16(h);
   ident[6] = le16(s);
@@ -940,8 +893,84 @@ int ide_make_drive(uint8_t type, int fd, int sparse_file)
   ident[58] = le16(sectors >> 16);
   ident[60] = ident[57];
   ident[61] = ident[58];
+}
+
+int ide_make_drive(uint8_t type, int fd, int sparse_file)
+{
+  uint8_t s, h;
+  uint16_t c;
+  uint32_t sectors;
+  uint16_t ident[256];
+  const char *firmware, *model;
+  int lba = 0;
+
+  if (type < 1 || type > MAX_DRIVE_TYPE)
+    return -2;
+
+  memset(ident, 0, 512);
+  memcpy(ident, ide_magic, 8);
   if (write(fd, ident, 512) != 512)
     return -1;
+
+  firmware = "A001.001";
+  lba = 1;
+
+  switch(type) {
+    case ACME_ROADRUNNER:
+      /* 504MB drive with LBA support */
+      c = 1024;
+      h = 16;
+      s = 63;
+      model = "ACME ROADRUNNER v0.1";
+      break;
+    case ACME_ULTRASONICUS:
+      /* 40MB drive with LBA support */
+      c = 977;
+      h = 5;
+      s = 16;
+      model = "ACME ULTRASONICUS AD INFINITUM v0.1";
+      break;
+    case ACME_NEMESIS:
+      /* 20MB drive with LBA support */
+      c = 615;
+      h = 4;
+      s = 16;
+      model = "ACME NEMESIS RIDICULII v0.1";
+      break;
+    case ACME_COYOTE:
+      /* 20MB drive without LBA support */
+      c = 615;
+      h = 4;
+      s = 16;
+      lba = 0;
+      model = "ACME COYOTE v0.1";
+      break;
+    case ACME_ACCELLERATTI:
+      c = 1024;
+      h = 16;
+      s = 16;
+      model = "ACME ACCELLERATTI INCREDIBILUS v0.1";
+      break;
+    case ACME_ZIPPIBUS:
+      c = 1024;
+      h = 16;
+      s = 32;
+      model = "ACME ZIPPIBUS v0.1";
+      break;
+    case ACME_BIGGUS_DISKUS:
+      c = 8192;
+      h = 16;
+      s = 128;
+      model = "ACME BIGGUS DISKUS v0.1";
+      break;
+  }
+
+  ide_make_identity_page(ident, c, h, s, lba, firmware, model);
+
+  if (write(fd, ident, 512) != 512)
+    return -1;
+
+  sectors = c * h * s;
 
   if(sparse_file) {
       if(lseek(fd, (off_t)(sectors-1) * (off_t)512, SEEK_CUR) == (off_t)-1)

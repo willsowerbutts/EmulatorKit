@@ -20,7 +20,7 @@ int main(int argc, const char *argv[])
     fprintf(stderr, "type 7: 8192MB ACME BIGGUS DISKUS              8192C  16H  128S  LBA\n\n");
 
     fprintf(stderr, "Entering a negative type number will create a sparse file.\n");
-    fprintf(stderr, "Sparse file disk images are initialised with all 0x00 bytes.\n");
+    fprintf(stderr, "Sparse file disk images initially contain 0x00 bytes.\n");
     fprintf(stderr, "Non-sparse file disk images are initialised with all 0xE5 bytes.\n");
 
     exit(1);

@@ -49,7 +49,7 @@ struct ide_taskfile {
 struct ide_drive {
   struct ide_controller *controller;
   struct ide_taskfile taskfile;
-  unsigned int present:1, intrq:1, failed:1, lba:1, eightbit:1;
+  unsigned int present:1, intrq:1, failed:1, lba:1, eightbit:1, raw:1;
   uint16_t cylinders;
   uint8_t heads, sectors;
   uint8_t data[512];
