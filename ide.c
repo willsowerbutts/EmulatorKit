@@ -873,7 +873,7 @@ void ide_make_identity_page(uint16_t *ident, uint16_t c, uint8_t h, uint8_t s,
 {
   uint32_t sectors;
   memset(ident, 0, 512);
-  ident[0] = le16((1 << 15) | (1 << 6));	/* Non removable */
+  ident[0] = le16( /*(1 << 15) |*/ (1 << 6));	/* Non removable */
   make_serial(ident + 10);
   ident[47] = 0;                                /* no read multi for now */
   ident[51] = le16(240 /* PIO2 */ << 8);	/* PIO cycle time */
