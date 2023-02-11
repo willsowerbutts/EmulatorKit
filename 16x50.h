@@ -13,6 +13,7 @@ void uart16x50_dsr_timer(struct uart16x50 *uart16x50);
 void uart16x50_signal_change(struct uart16x50 *uart16x50, uint8_t mcr);
 void uart16x50_signal_event(struct uart16x50 *uart16x50, uint8_t msr);
 void uart16x50_set_clock(struct uart16x50 *d, unsigned clock);
+void uart16x50_dump_state(struct uart16x50 *uptr);
 
 /* These are inverse of the actual signal level for 5v TTL */
 #define MCR_DTR		0x01

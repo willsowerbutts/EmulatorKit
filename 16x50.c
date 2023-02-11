@@ -29,6 +29,14 @@ struct uart16x50 {
     int input;
 };
 
+void uart16x50_dump_state(struct uart16x50 *uptr)
+{
+    fprintf(stderr, "uart: IER=%02x IIR=%02x FCR=%02x LCR=%02x MCR=%02x LSR=%02x MSR=%02x SCR=%02x\n",
+            uptr->ier, uptr->iir, uptr->fcr, uptr->lcr, uptr->mcr, uptr->lsr, uptr->msr, uptr->scratch);
+    fprintf(stderr, "uart: ls=%02x ms=%02x dlab=%02x irq=%02x irqline=%02x input=%02x clock=%x\n",
+            uptr->ls, uptr->ms, uptr->dlab, uptr->irq, uptr->irqline, uptr->input, uptr->clock);
+}
+
 void uart16x50_reset(struct uart16x50 *uptr)
 {
     uptr->dlab = 0;
@@ -241,10 +249,10 @@ uint8_t uart16x50_read(struct uart16x50 *uptr, uint8_t addr)
         if (uptr->mcr & 16){
             /* loopback mode: loop back the modem control signals */
             r &= 0x0F;
-            if(uptr->mcr & 1) r |= 0x20; /* DTR controls DSR */
-            if(uptr->mcr & 2) r |= 0x10; /* RTS controls CTS */
-            if(uptr->mcr & 4) r |= 0x40; /* OUT1 controls RI */
-            if(uptr->mcr & 8) r |= 0x80; /* OUT2 controls DCD */
+            if(uptr->mcr & MCR_DTR)  r |= MSR_DSR; /* DTR controls DSR */
+            if(uptr->mcr & MCR_RTS)  r |= MSR_CTS; /* RTS controls CTS */
+            if(uptr->mcr & MCR_OUT1) r |= MSR_RI;  /* OUT1 controls RI */
+            if(uptr->mcr & MCR_OUT2) r |= MSR_DCD; /* OUT2 controls DCD */
         }
         return r;
     case 7:
