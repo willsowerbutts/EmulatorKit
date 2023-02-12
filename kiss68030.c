@@ -539,8 +539,6 @@ unsigned int cpu_read_long_dasm(unsigned int address)
     return (cpu_read_word_dasm(address) << 16) | cpu_read_word_dasm(address + 2);
 }
 
-extern int trace_opcode_fetch;
-
 void cpu_write_byte(unsigned int address, unsigned int value)
 {
     if (trace & TRACE_MEM)
@@ -557,17 +555,6 @@ void cpu_write_byte(unsigned int address, unsigned int value)
 
     if (address < memsize) {
         ram[address] = value;
-        return;
-    }
-    if(address == 0xFFFFEEEE){
-        fprintf(stderr, "magic trace write: trace=0x%02x\n", value);
-        trace = TRACE_CPU | TRACE_MEM;
-        trace_opcode_fetch = 1;
-        return;
-    }
-    if(address == 0xFFFFEEEF){
-        fprintf(stderr, "magic trace write: signal=0x%02x\n", value);
-        trace = value;
         return;
     }
     if (address < 0xFFF00000){ /* unmapped */
@@ -671,18 +658,6 @@ void cpu_write_pd(unsigned int address, unsigned int value)
     cpu_write_word(address, value >> 16);
 }
 
-int cpu_illegal_instuction(int opcode)
-{
-    unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
-    fprintf(stderr, "KISS SAYS ILLEGAL OPCODE %x, PC=%x\n", opcode, pc);
-    cpu_dump_regs();
-
-    raise(SIGTRAP);
-    // sleep(1);
-
-    return 0; /* return nonzero to skip normal exception processing */
-}
-
 void cpu_instr_callback(void)
 {
     if (trace & TRACE_CPU) {
@@ -692,9 +667,9 @@ void cpu_instr_callback(void)
 
         m68k_disassemble_il(buf, pc, M68K_CPU_TYPE_68030, &len);
         fprintf(stderr, "\n>%08X| ", pc);
-        for(i=0; i<len; i++)
+        for(i=0; i<len; i+=2)
             fprintf(stderr, "%04x ", cpu_read_word_dasm(pc+i));
-        for(; i<6; i++)
+        for(; i<12; i+=2)
             fprintf(stderr, "     ");
         fprintf(stderr, "%-40s", buf);
     }

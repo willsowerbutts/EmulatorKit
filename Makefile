@@ -1,5 +1,5 @@
 
-CFLAGS = -O3 -Wall -pedantic -g3 -Werror -Wno-stringop-truncation
+CFLAGS = -O3 -Wall -pedantic -g3 
 
 TARGETS=rc2014 rcbus-1802 rcbus-6303 rcbus-6502 rcbus-65c816-mini \
 	rcbus-65c816 rcbus-6800 rcbus-68008 rcbus-6809 rcbus-68hc11 \

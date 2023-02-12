@@ -1259,7 +1259,6 @@ inline unsigned int  m68k_read_pcrelative_32(m68ki_cpu_core *state, unsigned int
 }
 #endif
 
-int trace_opcode_fetch = 0;
 uint m68ki_read_imm16_addr_slowpath(m68ki_cpu_core *state, uint32_t pc, address_translation_cache *cache)
 {
     uint32_t address = ADDRESS_68K(pc);
@@ -1302,12 +1301,7 @@ uint m68ki_read_imm16_addr_slowpath(m68ki_cpu_core *state, uint32_t pc, address_
 #else
 	REG_PC += 2;
 
-	// return m68k_read_immediate_16(state, address);
-	uint r = m68k_read_immediate_16(state, address);
-        if(trace_opcode_fetch)
-            fprintf(stderr, "<%04x>", r);
-        return r;
-
+	return m68k_read_immediate_16(state, address);
 #endif /* M68K_EMULATE_PREFETCH */
 }
 

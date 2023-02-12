@@ -160,7 +160,7 @@ extern void cpu_instr_callback(void);
  * You should put OPT_SPECIFY_HANDLER here if you cant to use it, otherwise it will
  * use a dummy default handler and you'll have to call m68k_set_illg_instr_callback explicitely
  */
-#define M68K_ILLG_HAS_CALLBACK	    OPT_SPECIFY_HANDLER
+#define M68K_ILLG_HAS_CALLBACK	    OPT_OFF
 #define M68K_ILLG_CALLBACK(opcode)  cpu_illegal_instuction(opcode)
 
 /* If ON, CPU will call the set fc callback on every memory access to

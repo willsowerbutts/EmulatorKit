@@ -9,6 +9,7 @@
 
 // MMU status register bit definitions
 
+#include <signal.h>
 
 
 struct m68ki_cpu_core;
@@ -122,13 +123,14 @@ uint32 DECODE_EA_32(m68ki_cpu_core *state, int ea)
 
 void pmmu_set_buserror(m68ki_cpu_core *state, uint32 addr_in)
 {
-    fprintf(stderr, "pmmu_set_buserror(0x%08x)\n", addr_in);
 	if (!m_side_effects_disabled && ++state->mmu_tmp_buserror_occurred == 1)
 	{
 		state->mmu_tmp_buserror_address = addr_in;
 		state->mmu_tmp_buserror_rw = state->mmu_tmp_rw;
 		state->mmu_tmp_buserror_fc = state->mmu_tmp_fc;
 		state->mmu_tmp_buserror_sz = state->mmu_tmp_sz;
+                fprintf(stderr, "pmmu_set_buserror() called while translating address 0x%08x\n", addr_in);
+                raise(SIGTRAP); /* emulator does not handle this condition correctly */
 	}
 }
 
@@ -445,14 +447,13 @@ uint16 pmmu_walk_tables(m68ki_cpu_core *state, uint32 addr_in, int type, uint32 
 		uint16 indirect = (!bitpos || !(bits >> bitpos)) && indexbits;
 		uint32 tbl_entry, tbl_entry2;
 
-		fprintf(stderr, "%s: type %d, table %08x, addr_in %08x, indexbits %d, pageshift %d, indirect %d table_index %08x, rw=%d fc=%d\n",
-				__func__, type, table, addr_in, indexbits, pageshift, indirect, table_index, rw, fc);
+		MMULOG(("%s: type %d, table %08x, addr_in %08x, indexbits %d, pageshift %d, indirect %d table_index %08x, rw=%d fc=%d\n",
+				__func__, type, table, addr_in, indexbits, pageshift, indirect, table_index, rw, fc));
 
 		switch(type)
 		{
 			case M68K_MMU_DF_DT_INVALID:   // invalid, will cause MMU exception
 				state->mmu_tmp_sr = M68K_MMU_SR_INVALID;
-                                fprintf(stderr, " *** INVALID MOFO! *** ");
 				MMULOG(("PMMU: DT0 PC=%x (addr_in %08x -> %08x)\n", state->ppc, addr_in, *addr_out));
 				resolved = 1;
 				break;
