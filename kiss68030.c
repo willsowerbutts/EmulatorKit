@@ -133,6 +133,45 @@ void u304_clk(void)
     }
 }
 
+#if 0
+/* dumps memory as viewed by CPU -- MMU translation, S-bit in SR all taken into account */
+static void hexdump_cpu_memory(uint32_t base, uint32_t count)
+{
+    m68ki_cpu_core *state = &m68ki_cpu;
+    int i,j;
+    unsigned char c;
+    for (i = 0; i < count; i+= 16) {
+        fprintf(stderr, "VIRT %08X | ", base+i);
+        for(j = 0; j < 16; j++)
+            fprintf(stderr, "%02X ", m68ki_read_8(state, base+i+j));
+        fprintf(stderr, "|");
+        for(j = 0; j < 16; j++){
+            c = m68ki_read_8(state, base+i+j);
+            fprintf(stderr, "%c", (c > 32 && c < 128) ? c : ' ');
+        }
+        fprintf(stderr, "\n");
+    }
+}
+
+static void hexdump_phys_memory(uint32_t base, uint32_t count)
+{
+    int i,j;
+    unsigned char c;
+
+    for (i = 0; i < count; i+= 16) {
+        fprintf(stderr, "PHYS %08X | ", base+i);
+        for(j = 0; j < 16; j++)
+            fprintf(stderr, "%02X ", ram[base+i+j]);
+        fprintf(stderr, "|");
+        for(j = 0; j < 16; j++){
+            c = ram[base+i+j];
+            fprintf(stderr, "%c", (c > 32 && c < 128) ? c : ' ');
+        }
+        fprintf(stderr, "\n");
+    }
+}
+#endif
+
 unsigned int check_chario(void)
 {
 	fd_set i, o;
@@ -457,7 +496,7 @@ unsigned int cpu_read_byte(unsigned int address)
     else
         v = do_cpu_read_byte(address, 0);
     if (trace & TRACE_MEM)
-        fprintf(stderr, "RB %08X -> %02X\n", address, v);
+        fprintf(stderr, "{%08X:%02X}", address, v);
     return v;
 }
 
@@ -474,7 +513,7 @@ unsigned int cpu_read_word(unsigned int address)
     else
         v = do_cpu_read_word(address, 0);
     if (trace & TRACE_MEM)
-        fprintf(stderr, "RW %08X -> %04X\n", address, v);
+        fprintf(stderr, "{%08X:%04X}", address, v);
     return v;
 }
 
@@ -491,7 +530,7 @@ unsigned int cpu_read_long(unsigned int address)
     else
         v = (cpu_read_word(address) << 16) | cpu_read_word(address + 2);
     if (trace & TRACE_MEM)
-        fprintf(stderr, "RW %08X -> %08X\n", address, v);
+        fprintf(stderr, "{%08X:%08X}", address, v);
     return v;
 }
 
@@ -500,8 +539,12 @@ unsigned int cpu_read_long_dasm(unsigned int address)
     return (cpu_read_word_dasm(address) << 16) | cpu_read_word_dasm(address + 2);
 }
 
+extern int trace_opcode_fetch;
+
 void cpu_write_byte(unsigned int address, unsigned int value)
 {
+    if (trace & TRACE_MEM)
+        fprintf(stderr, "{%08X<%02X}", address, value);
     if(address < fast_memsize) {
         ram[address] = value;
         return;
@@ -514,6 +557,17 @@ void cpu_write_byte(unsigned int address, unsigned int value)
 
     if (address < memsize) {
         ram[address] = value;
+        return;
+    }
+    if(address == 0xFFFFEEEE){
+        fprintf(stderr, "magic trace write: trace=0x%02x\n", value);
+        trace = TRACE_CPU | TRACE_MEM;
+        trace_opcode_fetch = 1;
+        return;
+    }
+    if(address == 0xFFFFEEEF){
+        fprintf(stderr, "magic trace write: signal=0x%02x\n", value);
+        trace = value;
         return;
     }
     if (address < 0xFFF00000){ /* unmapped */
@@ -588,6 +642,8 @@ void cpu_write_byte(unsigned int address, unsigned int value)
 
 void cpu_write_word(unsigned int address, unsigned int value)
 {
+    if (trace & TRACE_MEM)
+        fprintf(stderr, "{%08X<%04X}", address, value);
     if(address < fast_memsize) {
         *((uint16_t*)&ram[address]) = htobe16(value);
         return;
@@ -599,6 +655,8 @@ void cpu_write_word(unsigned int address, unsigned int value)
 
 void cpu_write_long(unsigned int address, unsigned int value)
 {
+    if (trace & TRACE_MEM)
+        fprintf(stderr, "{%08X<%08X}", address, value);
     if(address < fast_memsize) {
         *((uint32_t*)&ram[address]) = htobe32(value);
     } else {
@@ -613,17 +671,33 @@ void cpu_write_pd(unsigned int address, unsigned int value)
     cpu_write_word(address, value >> 16);
 }
 
+int cpu_illegal_instuction(int opcode)
+{
+    unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
+    fprintf(stderr, "KISS SAYS ILLEGAL OPCODE %x, PC=%x\n", opcode, pc);
+    cpu_dump_regs();
+
+    raise(SIGTRAP);
+    // sleep(1);
+
+    return 0; /* return nonzero to skip normal exception processing */
+}
+
 void cpu_instr_callback(void)
 {
     if (trace & TRACE_CPU) {
+        int len, i;
         char buf[128];
         unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
-        m68k_disassemble(buf, pc, M68K_CPU_TYPE_68030);
-        fprintf(stderr, ">%08X %s\n", pc, buf);
+
+        m68k_disassemble_il(buf, pc, M68K_CPU_TYPE_68030, &len);
+        fprintf(stderr, "\n>%08X| ", pc);
+        for(i=0; i<len; i++)
+            fprintf(stderr, "%04x ", cpu_read_word_dasm(pc+i));
+        for(; i<6; i++)
+            fprintf(stderr, "     ");
+        fprintf(stderr, "%-40s", buf);
     }
-    // unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
-    // if(pc == 0xfff006b6 || pc == 0xfff00698 || pc == 0xfff006c6)
-    //     cpu_dump_regs();
 }
 
 static void device_init(void)
@@ -653,10 +727,35 @@ static void exit_cleanup(void)
     tcsetattr(0, 0, &saved_term);
 }
 
-static void toggle_trace(int sig)
+int need_dump_state = 0;
+static void sig_dump_state(int sig)
+{
+    /* minimal signal handler */
+    need_dump_state = 1;
+}
+
+static void do_dump_state(void)
+{
+    need_dump_state = 0;
+    
+    fprintf(stderr, "\n");
+    ns202_dump_state();
+    uart16x50_dump_state(uart);
+    cpu_dump_regs();
+}
+
+int need_toggle_trace = 0;
+static void sig_toggle_trace(int sig)
+{
+    /* minimal signal handler */
+    need_toggle_trace = 1;
+}
+
+static void do_toggle_trace(void)
 {
     int s;
 
+    need_toggle_trace = 0;
     s = trace;
     trace = trace_alt;
     trace_alt = s;
@@ -677,10 +776,11 @@ static void take_a_nap(void)
 
 int cpu_irq_ack(int level)
 {
-    uint8_t v, i;
+    uint8_t v=0, i;
 
     i = ns202_int_ack();
-    m68k_set_irq(M68K_IRQ_NONE); /* clear IRQ */
+    if(!ns202_irq_asserted())
+        m68k_set_irq(M68K_IRQ_NONE); /* clear IRQ */
 
     /*
     ** computing the vector:
@@ -723,8 +823,10 @@ int cpu_irq_ack(int level)
             break;
     }
 
+    /*
     if (trace & TRACE_NS202)
         fprintf(stderr, "68K interrupt ACK: vector %02X\n", v);
+    */
 
     return v;
 }
@@ -739,9 +841,9 @@ void recalc_interrupts(void)
         ns202_raise(9);
 
     /* NS202 signals CPU interrupt with IPL0=0, IPL1=1, IPL2=0 */
-    m68k_set_irq(ns202_irq_asserted() ? M68K_IRQ_2 : M68K_IRQ_NONE);
+    if(ns202_irq_asserted())
+        m68k_set_irq(M68K_IRQ_2);
 }
-
 
 /* called by the 68K emulator when the CPU encounters a RESET instruction */
 void cpu_pulse_reset(void)
@@ -758,14 +860,14 @@ void usage(const char *name)
     fprintf(stderr, "%s: [-m memsize][-r rompath][-i idepath][-I idepath][-s sdpath][-S sdpath][-d debug][-D debug].\n", name);
     fprintf(stderr, "memsize is in megabytes\n");
     fprintf(stderr, "debug is a bitwise OR combination of the following:\n");
-    fprintf(stderr, "%5d   MEM\n",	 TRACE_MEM);
-    fprintf(stderr, "%5d   CPU\n",	 TRACE_CPU);
+    fprintf(stderr, "%5d   MEM\n",   TRACE_MEM);
+    fprintf(stderr, "%5d   CPU\n",   TRACE_CPU);
     fprintf(stderr, "%5d   UART\n",  TRACE_UART);
     fprintf(stderr, "%5d   PPIDE\n", TRACE_PPIDE);
-    fprintf(stderr, "%5d   RTC\n",	 TRACE_RTC);
-    fprintf(stderr, "%5d   FDC\n",	 TRACE_FDC);
+    fprintf(stderr, "%5d   RTC\n",   TRACE_RTC);
+    fprintf(stderr, "%5d   FDC\n",   TRACE_FDC);
     fprintf(stderr, "%5d   NS202\n", TRACE_NS202);
-    fprintf(stderr, "%5d   SD\n",	 TRACE_SD);
+    fprintf(stderr, "%5d   SD\n",    TRACE_SD);
     exit(1);
 }
 
@@ -829,7 +931,8 @@ int main(int argc, char *argv[])
         signal(SIGINT, SIG_IGN);
         signal(SIGQUIT, cleanup);
         signal(SIGTSTP, SIG_IGN);
-        signal(SIGUSR1, toggle_trace);
+        signal(SIGUSR1, sig_toggle_trace);
+        signal(SIGUSR2, sig_dump_state);
         term.c_lflag &= ~ICANON;
         term.c_iflag &= ~(ICRNL | IGNCR);
         term.c_cc[VMIN] = 1;
@@ -973,10 +1076,17 @@ int main(int argc, char *argv[])
     /* Init devices */
     device_init();
 
+    fprintf(stderr, "interrupts disabled during CPU trace - bodge\n");
+
     while (1) {
+        if(need_toggle_trace)
+            do_toggle_trace();
+        if(need_dump_state)
+            do_dump_state();
         m68k_execute(&m68ki_cpu, 3200); /* 32MHz target */
         uart16x50_event(uart);
-        recalc_interrupts();
+        if(!(trace & TRACE_CPU))
+            recalc_interrupts();
         /* NS202 is run off the MF-PIC UART clock */
         ns202_tick(184);
         if (!fast)

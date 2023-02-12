@@ -1,5 +1,5 @@
 
-CFLAGS = -Wall -pedantic -g3 -Werror
+CFLAGS = -O3 -Wall -pedantic -g3 -Werror -Wno-stringop-truncation
 
 TARGETS=rc2014 rcbus-1802 rcbus-6303 rcbus-6502 rcbus-65c816-mini \
 	rcbus-65c816 rcbus-6800 rcbus-68008 rcbus-6809 rcbus-68hc11 \
@@ -141,7 +141,7 @@ mini68k.o: mini68k.c m68k/lib68k.a
 	$(CC) $(CFLAGS) -Im68k -c mini68k.c
 
 kiss68030.o: kiss68030.c m68k/lib68k.a
-	$(CC) $(CFLAGS) -O2 -Im68k -c kiss68030.c
+	$(CC) $(CFLAGS) -O3 -Im68k -c kiss68030.c
 
 z80mc:	z80mc.o sdcard.o libz80/libz80.o
 	cc -g3 z80mc.o sdcard.o libz80/libz80.o -o z80mc
@@ -209,7 +209,7 @@ nabupc_sdl2: nabupc.o nabupc_sdlui.o ide.o tms9918a.o tms9918a_sdl2.o z80dis.o l
 68hc11.o: 6800.c
 
 makedisk: makedisk.o ide.o
-	cc -O2 -o makedisk makedisk.o ide.o
+	cc -O3 -o makedisk makedisk.o ide.o
 
 clean:
 	$(MAKE) --directory libz80 clean && \

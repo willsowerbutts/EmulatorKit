@@ -397,6 +397,7 @@ unsigned int m68k_is_valid_instruction(unsigned int instruction, unsigned int cp
  * disassembly in str_buff and returns the size of the instruction in bytes.
  */
 unsigned int m68k_disassemble(char* str_buff, unsigned int pc, unsigned int cpu_type);
+unsigned int m68k_disassemble_il(char* str_buff, unsigned int pc, unsigned int cpu_type, int *instruction_length);
 
 /* Same as above but accepts raw opcode data directly rather than fetching
  * via the read/write interfaces.

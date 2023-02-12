@@ -3721,6 +3721,16 @@ static void build_opcode_table(void)
 /* ================================= API ================================== */
 /* ======================================================================== */
 
+unsigned int m68k_disassemble_il(char* str_buff, unsigned int pc, unsigned int cpu_type, int *instruction_length)
+{
+    unsigned int r;
+
+    r = m68k_disassemble(str_buff, pc, cpu_type);
+    *instruction_length = g_cpu_pc - pc;
+
+    return r;
+}
+
 /* Disasemble one instruction at pc and store in str_buff */
 unsigned int m68k_disassemble(char* str_buff, unsigned int pc, unsigned int cpu_type)
 {

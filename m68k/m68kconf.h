@@ -160,8 +160,8 @@ extern void cpu_instr_callback(void);
  * You should put OPT_SPECIFY_HANDLER here if you cant to use it, otherwise it will
  * use a dummy default handler and you'll have to call m68k_set_illg_instr_callback explicitely
  */
-#define M68K_ILLG_HAS_CALLBACK	    OPT_OFF
-#define M68K_ILLG_CALLBACK(opcode)  op_illg(opcode)
+#define M68K_ILLG_HAS_CALLBACK	    OPT_SPECIFY_HANDLER
+#define M68K_ILLG_CALLBACK(opcode)  cpu_illegal_instuction(opcode)
 
 /* If ON, CPU will call the set fc callback on every memory access to
  * differentiate between user/supervisor, program/data access like a real
@@ -188,7 +188,7 @@ extern void cpu_instr_callback(void);
 
 
 /* If ON, the CPU will emulate the 4-byte prefetch queue of a real 68000 */
-#define M68K_EMULATE_PREFETCH       OPT_ON
+#define M68K_EMULATE_PREFETCH       OPT_OFF
 
 
 /* If ON, the CPU will generate address error exceptions if it tries to
@@ -204,7 +204,7 @@ extern void cpu_instr_callback(void);
  */
 #define M68K_LOG_ENABLE             OPT_OFF
 #define M68K_LOG_1010_1111          OPT_OFF
-#define M68K_LOG_FILEHANDLE         some_file_handle
+#define M68K_LOG_FILEHANDLE         
 
 /* Emulate PMMU : if you enable this, there will be a test to see if the current chip has some enabled pmmu added to every memory access,
  * so enable this only if it's useful */

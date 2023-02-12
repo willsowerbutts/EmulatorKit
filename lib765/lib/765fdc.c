@@ -902,11 +902,16 @@ fdc_byte fdc_read_data (FDC_765 *self)
 			fdc_dprintf(5, "%c:%02x\n", self->fdc_isr_countdown ? 'E' : 'e', v);
 			return v;
 		}
-		/* Not in execution phase. So we must be in the result phase */	
-		v = self->fdc_result_buf[self->fdc_result_pos++];
-		--self->fdc_result_len;
-		if (self->fdc_result_len == 0) fdc_end_result_phase(self);
-		fdc_dprintf(5, "R:%02x  (%d remaining)\n", v, self->fdc_result_len);
+                if(self->fdc_result_len){
+                    /* Not in execution phase. So we must be in the result phase */	
+                    v = self->fdc_result_buf[self->fdc_result_pos++];
+                    --self->fdc_result_len;
+                    if (self->fdc_result_len == 0) fdc_end_result_phase(self);
+                    fdc_dprintf(5, "R:%02x  (%d remaining)\n", v, self->fdc_result_len);
+                }else{
+                    fdc_dprintf(5, "R: underflow\n", v, self->fdc_result_len);
+                    v = 0;
+                }
 		return v;	
 	}
 	/* FDC is not ready to return data! */

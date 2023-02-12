@@ -9,7 +9,7 @@ MUSASHIGENERATOR = m68kmake
 .CFILEST   = $(MUSASHIFILES) $(MUSASHIGENCFILES)
 .OFILEST   = $(.CFILEST:%.c=%.o)
 
-CC        = gcc -O2
+CC        = gcc -O3
 WARNINGS  = -Wall -Wextra -pedantic -Werror
 CFLAGS    = $(WARNINGS)
 LFLAGS    = $(WARNINGS)

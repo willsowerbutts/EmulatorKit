@@ -13,5 +13,6 @@ void ns202_write(unsigned int address, unsigned int value);
 unsigned int ns202_read(unsigned int address);
 unsigned int ns202_int_ack(void);
 unsigned int ns202_irq_asserted(void);
+void ns202_dump_state(void);
 
 #endif
