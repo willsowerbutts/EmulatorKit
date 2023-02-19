@@ -235,7 +235,7 @@ void cpu_dump_regs(void)
     fprintf(stderr, "VBR=%08x\tCACR=%08x\tCAAR=%08x\n\n", vbr, cacr, caar);
 }
 
-#undef WARN_ON_READ_BEFORE_READY
+#define WARN_ON_READ_BEFORE_READY
 unsigned int next_char(void)
 {
 	char c;
@@ -658,6 +658,20 @@ void cpu_write_pd(unsigned int address, unsigned int value)
     cpu_write_word(address, value >> 16);
 }
 
+#if 0
+/* for debugging the DRAM priming code in ROM: */
+void cpu_instr_callback(void)
+{
+    if (trace & TRACE_CPU) {
+        unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
+        if(pc != 0xfff006ca && pc != 0xfff006e2)
+            return;
+
+        unsigned int a2 = m68k_get_reg(NULL, M68K_REG_A2);
+        fprintf(stderr, "%08X\n", a2);
+    }
+}
+#else
 void cpu_instr_callback(void)
 {
     if (trace & TRACE_CPU) {
@@ -669,11 +683,12 @@ void cpu_instr_callback(void)
         fprintf(stderr, "\n>%08X| ", pc);
         for(i=0; i<len; i+=2)
             fprintf(stderr, "%04x ", cpu_read_word_dasm(pc+i));
-        for(; i<12; i+=2)
+        for(; i<10; i+=2)
             fprintf(stderr, "     ");
         fprintf(stderr, "%-40s", buf);
     }
 }
+#endif
 
 static void device_init(void)
 {
@@ -1051,8 +1066,6 @@ int main(int argc, char *argv[])
     /* Init devices */
     device_init();
 
-    fprintf(stderr, "interrupts disabled during CPU trace - bodge\n");
-
     while (1) {
         if(need_toggle_trace)
             do_toggle_trace();
@@ -1060,8 +1073,7 @@ int main(int argc, char *argv[])
             do_dump_state();
         m68k_execute(&m68ki_cpu, 3200); /* 32MHz target */
         uart16x50_event(uart);
-        if(!(trace & TRACE_CPU))
-            recalc_interrupts();
+        recalc_interrupts();
         /* NS202 is run off the MF-PIC UART clock */
         ns202_tick(184);
         if (!fast)

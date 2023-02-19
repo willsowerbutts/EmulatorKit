@@ -167,15 +167,17 @@ void rtc_write(struct rtc *rtc, uint8_t val)
 {
 	uint8_t changed = val ^ rtc->st;
 	uint8_t is_read;
-	/* Direction */
-	if ((rtc->trace) && (changed & 0x20))
-		fprintf(stderr, "RTC direction now %s.\n", (val & 0x20) ? "read" : "write");
+
+        if(changed && rtc->trace){
+            fprintf(stderr, "rtc: ce=%d clk=%d wr=%d", val&0x10?1:0, val&0x40?1:0, val&0x20?1:0);
+            if(!(val&0x20))
+                fprintf(stderr, "  din=%d", val&0x80?1:0);
+        }
+
 	is_read = val & 0x20;
 	/* Clock */
 	if (changed & 0x40) {
 		/* The rising edge samples, the falling edge clocks receive */
-		if (rtc->trace)
-			fprintf(stderr, "RTC clock low.\n");
 		if (!(val & 0x40)) {
 			rtc->r >>= 1;
 			/* Burst read of time */
@@ -184,19 +186,13 @@ void rtc_write(struct rtc *rtc, uint8_t val)
 				rtc->r = rtc_regread(rtc, rtc->bp++) << 1;
 				rtc->bc = 0;
 			}
-			if (rtc->trace)
-				fprintf(stderr, "rtc->r now %02X\n", rtc->r);
 		} else {
-			if (rtc->trace)
-				fprintf(stderr, "RTC clock high.\n");
 			rtc->w >>= 1;
 			if ((val & 0x30) == 0x10)
 				rtc->w |= val & 0x80;
 			else
 				rtc->w |= 0xFF;
 			rtc->cnt++;
-			if (rtc->trace)
-				fprintf(stderr, "rtc->w now %02x (%d)\n", rtc->w, rtc->cnt);
 			if (!(rtc->cnt % 8) && !is_read)
 				rtcop(rtc);
 		}
@@ -204,8 +200,6 @@ void rtc_write(struct rtc *rtc, uint8_t val)
 	/* CE */
 	if (changed & 0x10) {
 		if (rtc->st & 0x10) {
-			if (rtc->trace)
-				fprintf(stderr, "RTC CE dropped.\n");
 			rtc->cnt = 0;
 			rtc->r = 0;
 			rtc->w = 0;
@@ -214,10 +208,15 @@ void rtc_write(struct rtc *rtc, uint8_t val)
 			/* Latch imaginary registers on rising edge */
 			time_t t = time(NULL);
 			rtc->tm = localtime(&t);
-			if (rtc->trace)
-				fprintf(stderr, "RTC CE raised and latched time.\n");
 		}
 	}
+
+        if(changed && rtc->trace){
+            if(val&0x20)
+                fprintf(stderr, " dout=%d", (rtc->r&0x01)?1:0);
+            fprintf(stderr, " r=%02x w=%02x\n", rtc->r, rtc->w);
+        }
+
 	rtc->st = val;
 }
 

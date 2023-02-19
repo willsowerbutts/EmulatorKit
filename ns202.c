@@ -314,7 +314,7 @@ void ns202_write(unsigned int address, unsigned int value)
 {
     unsigned ns32_reg = (address >> 8) & 0x1F;
 
-    if (ns202.trace > 1)
+    if (ns202.trace)
         fprintf(stderr, "ns202_write [%02d] = %02X\n", ns32_reg, value);
     switch(ns32_reg) {
         case R_HVCT:
