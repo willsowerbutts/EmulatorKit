@@ -28,8 +28,9 @@
  *		0x48	sio	16x50 UART
  *	0x2x	DiskIO PPIDE
  *	0x3x	DiskIO Floppy
- *	0x00	4Mem
+ *	0x0C    ECB-USB-FIFO
  *	0x08	DualSD
+ *	0x00	4Mem
  *
  *	TODO
  *	- make take_a_nap smarter (measure wall clock time elapsed)
@@ -57,6 +58,7 @@
 #include "rtc_bitbang.h"
 #include "sdcard.h"
 #include "ns202.h"
+#include "usbfifo.h"
 #include "lib765/include/765.h"
 
 #define NVRAM_FILENAME "kiss68030.nvram"
@@ -97,6 +99,9 @@ static uint8_t rom[ROMSIZE];
 
 /* Config register on the MFPIC */
 static uint8_t mfpic_cfg;
+
+/* ECB-USB-FIFO */
+static ecb_usb_fifo_state usb_fifo;
 
 static int trace = 0, trace_alt = 0;
 
@@ -464,6 +469,14 @@ unsigned int do_cpu_read_byte(unsigned int address, unsigned debug)
         case 0x08:
         case 0x09:
             return dualsd_read(address);
+        case 0x0C:
+            return ecb_usb_fifo_read_data(&usb_fifo);
+        case 0x0D:
+            return ecb_usb_fifo_read_status(&usb_fifo);
+        case 0x0E:
+        case 0x0F:
+            /* ECB-USB-FIFO also decodes these addresses */
+            return 0xFF;
         case 0x40:
             return ns202_read(address);
         case 0x42:
@@ -593,6 +606,16 @@ void cpu_write_byte(unsigned int address, unsigned int value)
         return;
     }
     switch(address & 0xFF) {
+        case 0x0C:
+            ecb_usb_fifo_write_data(&usb_fifo, value);
+            return;
+        case 0x0D:
+            ecb_usb_fifo_write_status(&usb_fifo, value);
+            return;
+        case 0x0E:
+        case 0x0F:
+            /* ECB-USB-FIFO also decodes these addresses */
+            return;
         /* DualSD */
         case 0x08:
         case 0x09:
@@ -695,6 +718,7 @@ static void device_init(void)
     u304_reset();
     ns202_reset();
     ppide_reset(ppide);
+    ecb_usb_fifo_reset(&usb_fifo);
     uart16x50_reset(uart);
     uart16x50_set_input(uart, 1);
     uart16x50_signal_event(uart, 0x10); /* mini68K ROM wants the CTS bit asserted */
@@ -830,6 +854,9 @@ void recalc_interrupts(void)
     if(ppide->ide->drive[0].intrq || ppide->ide->drive[1].intrq)
         ns202_raise(9);
 
+    if(ecb_usb_fifo_get_irq(&usb_fifo))
+        ns202_raise(7);
+
     /* NS202 signals CPU interrupt with IPL0=0, IPL1=1, IPL2=0 */
     if(ns202_irq_asserted())
         m68k_set_irq(M68K_IRQ_2);
@@ -847,7 +874,7 @@ void cpu_set_fc(int fc)
 
 void usage(const char *name)
 {
-    fprintf(stderr, "%s: [-m memsize][-r rompath][-i idepath][-I idepath][-s sdpath][-S sdpath][-d debug][-D debug].\n", name);
+    fprintf(stderr, "%s: [-m memsize][-r rompath][-i idepath][-I idepath][-s sdpath][-S sdpath][-d debug][-D debug][-U host][-u port].\n", name);
     fprintf(stderr, "memsize is in megabytes\n");
     fprintf(stderr, "debug is a bitwise OR combination of the following:\n");
     fprintf(stderr, "%5d   MEM\n",   TRACE_MEM);
@@ -874,8 +901,10 @@ int main(int argc, char *argv[])
     const char *pathb = NULL;
     const char *sdname = NULL;
     const char *sdname2 = NULL;
+    const char *fifo_host = "localhost";
+    const char *fifo_port = NULL;
 
-    while((opt = getopt(argc, argv, "d:fi:m:r:s:A:B:I:S:D:")) != -1) {
+    while((opt = getopt(argc, argv, "d:fi:m:r:s:A:B:I:S:D:u:U:")) != -1) {
         switch(opt) {
             case 'd':
                 trace = atoi(optarg);
@@ -909,6 +938,12 @@ int main(int argc, char *argv[])
                 break;
             case 'I':
                 diskname2 = optarg;
+                break;
+            case 'u':
+                fifo_port = optarg;
+                break;
+            case 'U':
+                fifo_host = optarg;
                 break;
             default:
                 usage(argv[0]);
@@ -1058,6 +1093,12 @@ int main(int argc, char *argv[])
     fdc_setdrive(fdc, 1, drive_b);
 
     ns202_trace(trace & TRACE_NS202 ? 1 : 0);
+
+    ecb_usb_fifo_create(&usb_fifo);
+    if(fifo_port){
+        if(ecb_usb_fifo_connect(&usb_fifo, fifo_host, fifo_port))
+            exit(1);
+    }
 
     m68k_init();
     m68k_set_cpu_type(&m68ki_cpu, M68K_CPU_TYPE_68030);
