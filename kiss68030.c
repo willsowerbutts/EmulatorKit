@@ -570,6 +570,12 @@ void cpu_write_byte(unsigned int address, unsigned int value)
         ram[address] = value;
         return;
     }
+    if (address == 0x80008888){ /* very special address */
+        /* writes to this address can alter the trace level from the guest machine */
+        /* handy to pop a write to this address right before some code that explodes! */
+        trace = value;
+        return;
+    }
     if (address < 0xFFF00000){ /* unmapped */
         if (trace & TRACE_MEM)
             fprintf(stderr,  "%08x: write to invalid space.\n", address);

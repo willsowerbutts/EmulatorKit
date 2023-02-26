@@ -114,12 +114,15 @@ unsigned char ecb_usb_fifo_read_data(ecb_usb_fifo_state *fifo)
         }
     }
 
+    // fprintf(stderr, "[rx:%02x]", b);
     return b;
 }
 
 void ecb_usb_fifo_write_data(ecb_usb_fifo_state *fifo, unsigned char value)
 {
     int r;
+
+    // fprintf(stderr, "[tx:%02x]", value);
 
     if(fifo->connection >= 0){
         r = write(fifo->connection, &value, 1);
