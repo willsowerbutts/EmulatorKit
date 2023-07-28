@@ -154,12 +154,17 @@ static void show_settings(struct uart16x50 *uptr)
     fprintf(stderr, "ier %02x]\n", uptr->ier);
 }
 
+const char console_prefix[]="\x1b[32m";
+const char console_suffix[]="\x1b[m";
+
 void uart16x50_write(struct uart16x50 *uptr, uint8_t addr, uint8_t val)
 {
     switch(addr) {
     case 0:	/* If dlab = 0, then write else LS*/
         if (uptr->dlab == 0) {
+            write(1, console_prefix, sizeof(console_prefix));
             write(1, &val, 1);
+            write(1, console_suffix, sizeof(console_suffix));
             uart16x50_clear_interrupt(uptr, TEMT);
             uart16x50_interrupt(uptr, TEMT);
         } else {

@@ -6,7 +6,7 @@ TARGETS=rc2014 rcbus-1802 rcbus-6303 rcbus-6502 rcbus-65c816-mini \
 	rcbus-80c188 rcbus-8085 rcbus-z8 rcbus-z180 rbcv2 searle linc80 \
 	makedisk markiv mbc2 smallz80 sbc2g z80mc simple80 flexbox tiny68k \
 	s100-z80 scelbi rb-mbc rcbus-tms9995 rhyophyre pz1 68knano \
-	littleboard mini68k kiss68030
+	littleboard mini68k kiss68030 q40
 
 all:	$(TARGETS)
 
@@ -137,8 +137,14 @@ mini68k: mini68k.o ide.o ppide.o 16x50.o ns202.o rtc_bitbang.o sdcard.o m68k/lib
 kiss68030: kiss68030.o ide.o ppide.o 16x50.o ns202.o rtc_bitbang.o sdcard.o m68k/lib68k.a lib765/lib/lib765.a usbfifo.o
 	cc -g3 kiss68030.o ide.o ppide.o 16x50.o ns202.o rtc_bitbang.o sdcard.o m68k/lib68k.a lib765/lib/lib765.a usbfifo.o -o kiss68030
 
+q40: q40.o 16x50.o m68k/lib68k.a ide.o
+	cc -g3 q40.o m68k/lib68k.a 16x50.o ide.o -o q40
+
 mini68k.o: mini68k.c m68k/lib68k.a
 	$(CC) $(CFLAGS) -Im68k -c mini68k.c
+
+q40.o: q40.c m68k/lib68k.a
+	$(CC) $(CFLAGS) -O3 -Im68k -c q40.c
 
 kiss68030.o: kiss68030.c m68k/lib68k.a
 	$(CC) $(CFLAGS) -O3 -Im68k -c kiss68030.c

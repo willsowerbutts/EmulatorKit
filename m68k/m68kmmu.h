@@ -129,7 +129,7 @@ void pmmu_set_buserror(m68ki_cpu_core *state, uint32 addr_in)
 		state->mmu_tmp_buserror_rw = state->mmu_tmp_rw;
 		state->mmu_tmp_buserror_fc = state->mmu_tmp_fc;
 		state->mmu_tmp_buserror_sz = state->mmu_tmp_sz;
-                fprintf(stderr, "pmmu_set_buserror() called while translating address 0x%08x\n", addr_in);
+                fprintf(stderr, "pmmu_set_buserror() called while translating address 0x%08x, PC=0x%08x\n", addr_in, REG_PC);
                 raise(SIGTRAP); /* emulator does not handle this condition correctly */
 	}
 }
