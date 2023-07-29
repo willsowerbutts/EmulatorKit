@@ -107,7 +107,9 @@ static void hexdump_cpu_memory(uint32_t base, uint32_t count)
         fprintf(stderr, "\n");
     }
 }
+#endif
 
+#if 0
 static void hexdump_phys_memory(uint32_t base, uint32_t count)
 {
     int i,j;
@@ -523,7 +525,8 @@ unsigned int do_cpu_read_byte(unsigned int address, unsigned debug)
         return rtc_read_byte(address);
     }
 
-    fprintf(stderr, "unmapped read at 0x%08x\n", address);
+    unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
+    fprintf(stderr, "unmapped read at 0x%08x PC=0x%x\n", address, pc);
     return 0xff;
 }
 
@@ -633,7 +636,8 @@ void cpu_write_byte(unsigned int address, unsigned int value)
         return;
     }
 
-    fprintf(stderr, "unmapped write at 0x%08x\n", address);
+    unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
+    fprintf(stderr, "unmapped write at 0x%08x, PC=0x%x\n", address, pc);
 }
 
 void cpu_write_word(unsigned int address, unsigned int value)
@@ -668,20 +672,6 @@ void cpu_write_pd(unsigned int address, unsigned int value)
     cpu_write_word(address, value >> 16);
 }
 
-#if 0
-/* for debugging the DRAM priming code in ROM: */
-void cpu_instr_callback(void)
-{
-    if (trace & TRACE_CPU) {
-        unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
-        if(pc != 0xfff006ca && pc != 0xfff006e2)
-            return;
-
-        unsigned int a2 = m68k_get_reg(NULL, M68K_REG_A2);
-        fprintf(stderr, "%08X\n", a2);
-    }
-}
-#else
 void cpu_instr_callback(void)
 {
     if (trace & TRACE_CPU) {
@@ -698,7 +688,6 @@ void cpu_instr_callback(void)
         fprintf(stderr, "%-40s", buf);
     }
 }
-#endif
 
 static void device_init(void)
 {
@@ -750,16 +739,6 @@ static void do_toggle_trace(void)
     fprintf(stderr, "[trace %d]", trace);
     uart16x50_trace(uart, trace & TRACE_UART ? 1 : 0);
     //ns202_trace(trace & TRACE_NS202 ? 1 : 0);
-}
-
-static void take_a_nap(void)
-{
-    /* WRS: could be smarter here - measure time since we last slept? */
-    struct timespec t;
-    t.tv_sec = 0;
-    t.tv_nsec = 100000;
-    if (nanosleep(&t, NULL))
-        perror("nanosleep");
 }
 
 void recalc_interrupts(void)
@@ -815,6 +794,55 @@ void usage(const char *name)
     fprintf(stderr, "%5d   NS202\n", TRACE_NS202);
     fprintf(stderr, "%5d   SD\n",    TRACE_SD);
     exit(1);
+}
+
+#define NS_BETWEEN_NAPS 100000
+#define NS_PER_SEC 1000000000
+#define TARGET_MHZ 40
+#define FUDGE_FACTOR 2
+#define CYCLES_PER_INTERVAL ((TARGET_MHZ*1000)/(1000000/NS_BETWEEN_NAPS)/FUDGE_FACTOR)
+
+static struct timespec last_wakeup;
+static const struct timespec interval = {
+    .tv_sec  = NS_BETWEEN_NAPS / NS_PER_SEC,
+    .tv_nsec = NS_BETWEEN_NAPS % NS_PER_SEC,
+};
+
+static void timespec_add(const struct timespec *a, const struct timespec *b, struct timespec *r)
+{
+    r->tv_sec = a->tv_sec + b->tv_sec;
+    r->tv_nsec = a->tv_nsec + b->tv_nsec;
+    if(r->tv_nsec >= NS_PER_SEC){
+        r->tv_sec++;
+        r->tv_nsec -= NS_PER_SEC;
+    }
+}
+
+static void timespec_sub(const struct timespec *a, const struct timespec *b, struct timespec *r)
+{
+    r->tv_sec = a->tv_sec - b->tv_sec;
+    r->tv_nsec = a->tv_nsec - b->tv_nsec;
+    if(r->tv_nsec < 0){
+        r->tv_sec--;
+        r->tv_nsec += NS_PER_SEC;
+    }
+}
+
+static void take_a_nap(void)
+{
+    struct timespec now;
+    struct timespec delay;
+
+    clock_gettime(CLOCK_MONOTONIC_RAW, &now);
+
+    /* compute how long to sleep: delay = last_wakeup - now + interval */
+    timespec_add(&last_wakeup, &interval, &delay);
+    timespec_sub(&delay, &now, &delay);
+
+    if(delay.tv_sec > 0 || delay.tv_nsec > 0)
+        nanosleep(&delay, NULL);
+
+    clock_gettime(CLOCK_MONOTONIC_RAW, &last_wakeup);
 }
 
 int main(int argc, char *argv[])
@@ -945,20 +973,22 @@ int main(int argc, char *argv[])
     /* Init devices */
     device_init();
 
+    clock_gettime(CLOCK_MONOTONIC_RAW, &last_wakeup);
+
     while (1) {
         if(need_toggle_trace)
             do_toggle_trace();
         if(need_dump_state)
             do_dump_state();
-        m68k_execute(&m68ki_cpu, 4000); /* 40MHz target */
+        m68k_execute(&m68ki_cpu, CYCLES_PER_INTERVAL);
         uart16x50_event(uart);
         recalc_interrupts();
         if (!fast)
             take_a_nap();
-        if(++frame_interrupt_counter >= (frame_interrupt_rate_bit ? 50 : 200)){
+        if(++frame_interrupt_counter >= (frame_interrupt_rate_bit ? 
+                    (NS_PER_SEC/NS_BETWEEN_NAPS/200) : (NS_PER_SEC/NS_BETWEEN_NAPS/50))){
             frame_interrupt_counter = 0;
             frame_interrupt_asserted = 1;
         }
-
     }
 }
