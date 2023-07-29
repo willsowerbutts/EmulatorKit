@@ -237,12 +237,14 @@ void ide_reset(struct ide_controller *c)
        mindnumbingly slow to start up ! We don't emulate any of that */
     c->drive[0].taskfile.status = ST_DRDY|ST_DSC;
     c->drive[0].eightbit = 0;
-  }
+  }else
+    c->drive[0].taskfile.status = 0;
   if (c->drive[1].present) {
     edd_setup(&c->drive[1].taskfile);
     c->drive[1].taskfile.status = ST_DRDY|ST_DSC;
     c->drive[1].eightbit = 0;
-  }
+  }else
+    c->drive[1].taskfile.status = 0;
   c->selected = 0;
 }
 
@@ -269,7 +271,10 @@ static void ide_srst_end(struct ide_controller *c)
 {
   /* Could be time delays here */
   ready(&c->drive[0].taskfile);
-  ready(&c->drive[1].taskfile);
+  if(c->drive[1].present)
+      ready(&c->drive[1].taskfile);
+  else
+      c->drive[1].taskfile.status &= ~ST_BSY;
 }
 
 static void cmd_edd_complete(struct ide_taskfile *tf)
