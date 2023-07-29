@@ -74,6 +74,7 @@ static struct ide_controller *ide;
 /* Q40 CPLD */
 int q40_interrupts_enabled = 0;
 int frame_interrupt_asserted = 0;
+int frame_interrupt_rate_bit = 0;
 int frame_interrupt_counter = 0;
 
 static int trace = 0, trace_alt = 0;
@@ -425,6 +426,7 @@ void master_io_write(unsigned int address, unsigned int value)
             break;
         case 14:
             fprintf(stderr, "master_io_write: frame interrupt rate = 0x%02x\n", value & 0xff);
+            frame_interrupt_rate_bit = value & 1;
             break;
         default:
             fprintf(stderr, "master_io_write: register %d = 0x%02x\n", address, value & 0xff);
@@ -953,7 +955,7 @@ int main(int argc, char *argv[])
         recalc_interrupts();
         if (!fast)
             take_a_nap();
-        if(frame_interrupt_counter++ >= 100){
+        if(++frame_interrupt_counter >= (frame_interrupt_rate_bit ? 50 : 200)){
             frame_interrupt_counter = 0;
             frame_interrupt_asserted = 1;
         }
