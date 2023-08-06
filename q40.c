@@ -42,6 +42,7 @@
 #include <m68k.h>
 #include <m68kcpu.h>
 #include <endian.h>
+#include "ne2000.h"
 #include "ide.h"
 #include "16x50.h"
 
@@ -76,6 +77,9 @@ int q40_interrupts_enabled = 0;
 int frame_interrupt_asserted = 0;
 int frame_interrupt_rate_bit = 0;
 int frame_interrupt_counter = 0;
+
+/* NE2000 ISA card */
+ne2000_t *ethdev;
 
 static int trace = 0, trace_alt = 0;
 
@@ -211,21 +215,24 @@ void isa_io_write_word(unsigned int address, unsigned int value)
     isa_addr = (address - 0xff400000) / 4;
 
     switch(isa_addr){
-        case 0x1f0:
-        case 0x1f1:
-        case 0x1f2:
-        case 0x1f3:
-        case 0x1f4:
-        case 0x1f5:
-        case 0x1f6:
-        case 0x1f7:
+        case 0x300: case 0x301: case 0x302: case 0x303: case 0x304: case 0x305: case 0x306: case 0x307:
+        case 0x308: case 0x309: case 0x30a: case 0x30b: case 0x30c: case 0x30d: case 0x30e: case 0x30f:
+            if(ethdev)
+                ne2000_write(isa_addr, value, ethdev);
+            break;
+        case 0x310: case 0x311: case 0x312: case 0x313: case 0x314: case 0x315: case 0x316: case 0x317:
+        case 0x318: case 0x319: case 0x31a: case 0x31b: case 0x31c: case 0x31d: case 0x31e: case 0x31f:
+            if(ethdev)
+                ne2000_asic_write_w(isa_addr, value, ethdev);
+            break;
+        case 0x1f0: case 0x1f1: case 0x1f2: case 0x1f3: case 0x1f4: case 0x1f5: case 0x1f6: case 0x1f7:
             ide_write16(ide, isa_addr & 0x07, value);
             break;
         case 0x3f6:
             ide_write16(ide, ide_altst_r, value);
             break;
         default:
-            fprintf(stderr, "Unhandled ISA I/O word write port 0x%x", address);
+            fprintf(stderr, "Unhandled ISA I/O word write port 0x%x\n", address);
     }
 }
 
@@ -239,19 +246,24 @@ unsigned int isa_io_read_word(unsigned int address)
     isa_addr = (address - 0xff400000) / 4;
 
     switch(isa_addr){
-        case 0x1f0:
-        case 0x1f1:
-        case 0x1f2:
-        case 0x1f3:
-        case 0x1f4:
-        case 0x1f5:
-        case 0x1f6:
-        case 0x1f7:
+        case 0x300: case 0x301: case 0x302: case 0x303: case 0x304: case 0x305: case 0x306: case 0x307:
+        case 0x308: case 0x309: case 0x30a: case 0x30b: case 0x30c: case 0x30d: case 0x30e: case 0x30f:
+            if(ethdev)
+                return ne2000_read(isa_addr, ethdev);
+            else
+                return 0xffff;
+        case 0x310: case 0x311: case 0x312: case 0x313: case 0x314: case 0x315: case 0x316: case 0x317:
+        case 0x318: case 0x319: case 0x31a: case 0x31b: case 0x31c: case 0x31d: case 0x31e: case 0x31f:
+            if(ethdev)
+                return ne2000_asic_read_w(isa_addr, ethdev);
+            else
+                return 0xffff;
+        case 0x1f0: case 0x1f1: case 0x1f2: case 0x1f3: case 0x1f4: case 0x1f5: case 0x1f6: case 0x1f7:
             return ide_read16(ide, isa_addr & 0x07);
         case 0x3f6:
             return ide_read16(ide, ide_altst_r);
         default:
-            fprintf(stderr, "Unhandled ISA I/O word read port 0x%x", address);
+            fprintf(stderr, "Unhandled ISA I/O word read port 0x%x\n", address);
             return 0xffff;
     }
 }
@@ -265,35 +277,35 @@ void isa_io_write_byte(unsigned int address, unsigned int value)
 
     isa_addr = (address - 0xff400001) / 4;
 
-    // fprintf(stderr, "ISA 0x%x=%02x\n", isa_addr, value);
 
     switch(isa_addr){
-        case 0x3f8:
-        case 0x3f9:
-        case 0x3fa:
-        case 0x3fb:
-        case 0x3fc:
-        case 0x3fd:
-        case 0x3fe:
-        case 0x3ff:
+        case 0x300: case 0x301: case 0x302: case 0x303: case 0x304: case 0x305: case 0x306: case 0x307:
+        case 0x308: case 0x309: case 0x30a: case 0x30b: case 0x30c: case 0x30d: case 0x30e: case 0x30f:
+            if(ethdev)
+                ne2000_write(isa_addr, value, ethdev);
+            break;
+        case 0x310: case 0x311: case 0x312: case 0x313: case 0x314: case 0x315: case 0x316: case 0x317:
+        case 0x318: case 0x319: case 0x31a: case 0x31b: case 0x31c: case 0x31d: case 0x31e: case 0x31f:
+            if(ethdev)
+                ne2000_asic_write_b(isa_addr, value, ethdev);
+            break;
+        case 0x3f8: case 0x3f9: case 0x3fa: case 0x3fb: case 0x3fc: case 0x3fd: case 0x3fe: case 0x3ff:
             uart16x50_write(uart, isa_addr & 0x07, value);
-            break;
-        case 0x1f0:
-        case 0x1f1:
-        case 0x1f2:
-        case 0x1f3:
-        case 0x1f4:
-        case 0x1f5:
-        case 0x1f6:
-        case 0x1f7:
+            return;
+        case 0x1f0: case 0x1f1: case 0x1f2: case 0x1f3: case 0x1f4: case 0x1f5: case 0x1f6: case 0x1f7:
             ide_write8(ide, isa_addr & 0x07, value);
-            break;
+            return;
         case 0x3f6:
             ide_write8(ide, ide_altst_r, value);
-            break;
+            return;
         default:
-            fprintf(stderr, "Unhandled ISA I/O byte write port 0x%x", address);
+            break;
     }
+    /* NE2000 range -- avoid noise during probing! */
+    if(isa_addr >= 0x280 && isa_addr <= 0x3a0)
+        return;
+
+    fprintf(stderr, "Unhandled ISA I/O byte write port 0x%x\n", address);
 }
 
 unsigned int isa_io_read_byte(unsigned int address)
@@ -306,32 +318,34 @@ unsigned int isa_io_read_byte(unsigned int address)
     isa_addr = (address - 0xff400001) / 4;
 
     switch(isa_addr){
-        case 0x3f8:
-        case 0x3f9:
-        case 0x3fa:
-        case 0x3fb:
-        case 0x3fc:
-        case 0x3fd:
-        case 0x3fe:
-        case 0x3ff:
+        case 0x300: case 0x301: case 0x302: case 0x303: case 0x304: case 0x305: case 0x306: case 0x307:
+        case 0x308: case 0x309: case 0x30a: case 0x30b: case 0x30c: case 0x30d: case 0x30e: case 0x30f:
+            if(ethdev)
+                return ne2000_read(isa_addr, ethdev);
+            break;
+        case 0x310: case 0x311: case 0x312: case 0x313: case 0x314: case 0x315: case 0x316: case 0x317:
+        case 0x318: case 0x319: case 0x31a: case 0x31b: case 0x31c: case 0x31d: case 0x31e: case 0x31f:
+            if(ethdev)
+                return ne2000_asic_read_b(isa_addr, ethdev);
+            break;
+        case 0x3f8: case 0x3f9: case 0x3fa: case 0x3fb: case 0x3fc: case 0x3fd: case 0x3fe: case 0x3ff:
             return uart16x50_read(uart, isa_addr & 0x07);
-        case 0x1f0:
-        case 0x1f1:
-        case 0x1f2:
-        case 0x1f3:
-        case 0x1f4:
-        case 0x1f5:
-        case 0x1f6:
-        case 0x1f7:
+        case 0x1f0: case 0x1f1: case 0x1f2: case 0x1f3: case 0x1f4: case 0x1f5: case 0x1f6: case 0x1f7:
             return ide_read8(ide, isa_addr & 0x07);
             break;
         case 0x3f6:
             return ide_read8(ide, ide_altst_r);
             break;
         default:
-            fprintf(stderr, "Unhandled ISA I/O byte read port 0x%x", address);
-            return 0xFF;
+            break;
     }
+
+    /* NE2000 range - avoid noise during probing! */
+    if(isa_addr >= 0x280 && isa_addr <= 0x3a0)
+        return 0xFF;
+
+    fprintf(stderr, "Unhandled ISA I/O byte read port 0x%x\n", address);
+    return 0xFF;
 }
 
 static unsigned char to_bcd(int n)
@@ -855,9 +869,13 @@ int main(int argc, char *argv[])
     const char *romname = "q40boot.rom";
     const char *diskname = NULL;
     const char *diskname2 = NULL;
+    const char *ethdevname = NULL;
 
-    while((opt = getopt(argc, argv, "d:fi:m:r:s:A:B:I:S:D:u:U:")) != -1) {
+    while((opt = getopt(argc, argv, "e:d:fi:m:r:s:A:B:I:S:D:u:U:")) != -1) {
         switch(opt) {
+            case 'e':
+                ethdevname = optarg;
+                break;
             case 'd':
                 trace = atoi(optarg);
                 break;
@@ -903,12 +921,18 @@ int main(int argc, char *argv[])
         tcsetattr(0, 0, &term);
     }
 
-    if (optind < argc)
+    if(optind < argc)
         usage(argv[0]);
 
     if(memsize_mb < 1){
         fprintf(stderr, "%s: RAM size must be at least 1MB\n", argv[0]);
         exit(1);
+    }
+
+    if(ethdevname){
+        ethdev = ne2000_init(ethdevname);
+    }else{
+        ethdev = NULL;
     }
 
     memsize = memsize_mb << 20; /* convert MB to bytes */
@@ -982,6 +1006,8 @@ int main(int argc, char *argv[])
             do_dump_state();
         m68k_execute(&m68ki_cpu, CYCLES_PER_INTERVAL);
         uart16x50_event(uart);
+        if(ethdev)
+            ne2000_poller(ethdev);
         recalc_interrupts();
         if (!fast)
             take_a_nap();
