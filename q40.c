@@ -298,6 +298,9 @@ void isa_io_write_byte(unsigned int address, unsigned int value)
         case 0x3f6:
             ide_write8(ide, ide_altst_r, value);
             return;
+        case 0x80:
+            // used to slow down for ISA devices
+            return;
         default:
             break;
     }
@@ -353,6 +356,8 @@ static unsigned char to_bcd(int n)
     return ((((n / 10)%10) << 4) | (n % 10));
 }
 
+time_t now_time = 0;
+
 unsigned int rtc_read_byte(unsigned int address)
 {
     address = (address >> 2) & 0x7ff;
@@ -360,14 +365,13 @@ unsigned int rtc_read_byte(unsigned int address)
     if(address < NVRAMSIZE){
         return nvram[address];
     }else{
-        time_t now_time;
-        time(&now_time);
         struct tm *now = localtime(&now_time);
+        int wday = ((now->tm_wday + 6) % 7)+1;
         switch(address & 0x7){
             case 1: return to_bcd(now->tm_sec);
             case 2: return to_bcd(now->tm_min);
             case 3: return to_bcd(now->tm_hour);
-            case 4: return to_bcd((now->tm_wday - 2 % 7)+1);
+            case 4: return to_bcd(wday);
             case 5: return to_bcd(now->tm_mday);
             case 6: return to_bcd(now->tm_mon + 1);
             case 7: return to_bcd(now->tm_year % 100);
@@ -384,7 +388,11 @@ void rtc_write_byte(unsigned int address, unsigned int value)
     if(address < NVRAMSIZE){
         nvram[address] = value;
     }else{
-        fprintf(stderr, "rtc write: %d = %02x\n", address & 8, value);
+        fprintf(stderr, "rtc write: %d = %02x\n", address & 7, value);
+        if((address & 7) == 0 && (value & 0x40)){ // prepare to read
+            time(&now_time);              // latch current date/time
+            fprintf(stderr, "rtc current time latched\n");
+        }
     }
 }
 
@@ -600,9 +608,9 @@ void cpu_write_byte(unsigned int address, unsigned int value)
     /* First up -- ROM! Everyone loves ROM */
     if(address < 0x18000){ /* low 96KB view of ROM */
         /* write to RAM below */
-        if(!softrom)
+        if(!softrom){
             ram[address] = value;
-        else{
+        }else{
             fprintf(stderr, "Write to 0x%08x in softrom mode\n", address);
         }
         return;
@@ -635,6 +643,16 @@ void cpu_write_byte(unsigned int address, unsigned int value)
     /* OK, some sort of I/O space */
     if(address >= 0xff000000 && address < 0xff008000){
         master_io_write(address, value);
+        return;
+    }
+    if(address == 0xff010000){
+        fprintf(stderr, "softrom disabled\n");
+        softrom = 0;
+        return;
+    }
+    if(address == 0xff018000){
+        fprintf(stderr, "softrom enabled\n");
+        softrom = 1;
         return;
     }
     if(address >= 0xff400000 && address < 0xff800000){
@@ -710,7 +728,6 @@ static void device_init(void)
     //ppide_reset(ppide);
     //ecb_usb_fifo_reset(&usb_fifo);
     fprintf(stderr, "device_init\n");
-    softrom = 0;
     uart16x50_reset(uart);
     uart16x50_set_input(uart, 1);
     uart16x50_signal_event(uart, 0x10); /* mini68K ROM wants the CTS bit asserted */
