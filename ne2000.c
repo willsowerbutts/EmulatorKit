@@ -1,4 +1,5 @@
 // WRS: based on GPL code borrowed from PCem
+// https://github.com/sarah-walker-pcem/pcem/blob/dev/src/networking/ne2000.c
 /////////////////////////////////////////////////////////////////////////
 // $Id: ne2k.cc,v 1.56.2.1 2004/02/02 22:37:22 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
@@ -1311,18 +1312,13 @@ ne2000_t *ne2000_common_init(const char *devname)
         ne2000_t *ne2000 = malloc(sizeof(ne2000_t));
         memset(ne2000, 0, sizeof(ne2000_t));
 
-        // maclocal[0] = 0x10;
-        // maclocal[1] = 0xf6;
-        // maclocal[2] = 0x0a;
-        // maclocal[3] = 0xdc;
-        // maclocal[4] = 0x4d;
-        // maclocal[5] = 0x8f;
         maclocal[0] = 0xac;
         maclocal[1] = 0xde;
         maclocal[2] = 0x48;
         maclocal[3] = 0x88;
         maclocal[4] = 0xbb;
         maclocal[5] = 0xaa;
+        
         pclog("ne2000: Using default MAC address (AC:DE:48:88:BB:AA)\n");
 
         memcpy(ne2000->physaddr, maclocal, 6);

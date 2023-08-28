@@ -549,6 +549,7 @@ unsigned int do_cpu_read_byte(unsigned int address, unsigned debug)
 
     unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
     fprintf(stderr, "unmapped read at 0x%08x PC=0x%x\n", address, pc);
+    sleep(1); // these tend to arrive in huuuuuuge quantities
     return 0xff;
 }
 
@@ -670,6 +671,8 @@ void cpu_write_byte(unsigned int address, unsigned int value)
 
     unsigned int pc = m68k_get_reg(NULL, M68K_REG_PC);
     fprintf(stderr, "unmapped write at 0x%08x, PC=0x%x\n", address, pc);
+    //sleep(1); // these tend to arrive in huuuuuuge quantities
+    //exit(1);
 }
 
 void cpu_write_word(unsigned int address, unsigned int value)

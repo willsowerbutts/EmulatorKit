@@ -900,6 +900,7 @@ int main(int argc, char *argv[])
     int fast = 0;
     int opt;
     int memsize_mb = MAXDRAMMB;
+    int rom_used;
     const char *romname = "kiss68030.rom";
     const char *diskname = NULL;
     const char *diskname2 = NULL;
@@ -1001,9 +1002,10 @@ int main(int argc, char *argv[])
         perror(romname);
         exit(1);
     }
-    if (read(fd, rom, sizeof(rom)) != sizeof(rom)) {
-        fprintf(stderr, "%s: too short. Must be %ldKiB.\n", romname, (long)sizeof(rom) >> 10);
-        exit(1);
+    rom_used = read(fd, rom, sizeof(rom));
+    if(rom_used < sizeof(rom)){
+        fprintf(stderr, "%s: too short. Padding to %ldKiB.\n", romname, (long)sizeof(rom) >> 10);
+        memset(&rom[rom_used], 0xff, sizeof(rom)-rom_used);
     }
     close(fd);
 
